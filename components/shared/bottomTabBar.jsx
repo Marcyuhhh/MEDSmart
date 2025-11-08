@@ -1,14 +1,22 @@
 import React from 'react';
 import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
 
 export default function BottomTabBar({ state, descriptors, navigation, activeColor }) {
   const insets = useSafeAreaInsets();
 
+  // --- EXPLICIT FILTER LOGIC ---
+  // Define which screens should be visible in the tab bar
+  const visibleTabNames = ['index', 'activity', 'medbox', 'profile'];
+  
+  const visibleRoutes = state.routes.filter((route) => 
+    visibleTabNames.includes(route.name)
+  );
+  // ----------------------------
+
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom }]}>
-      {state.routes.map((route, index) => {
+      {visibleRoutes.map((route, index) => {
         const { options } = descriptors[route.key];
         
         const label =
@@ -18,7 +26,7 @@ export default function BottomTabBar({ state, descriptors, navigation, activeCol
             ? options.title
             : route.name;
 
-        const isFocused = state.index === index;
+        const isFocused = state.routes[state.index].key === route.key;
         
         const Icon = (props) => options.tabBarIcon ? options.tabBarIcon(props) : null;
 

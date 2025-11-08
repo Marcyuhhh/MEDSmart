@@ -1,74 +1,417 @@
 import { StyleSheet } from 'react-native';
-import { COLORS, SIZES, FONTS } from './common.styles';
+import { COLORS, SIZES, FONTS, commonStyles } from './common.styles';
 
 export const patientStyles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    backgroundColor: COLORS.background,
+    backgroundColor: COLORS.patientBackground,
   },
-  title: {
-    fontSize: SIZES.xxlarge,
-    fontWeight: 'bold',
-    color: COLORS.text,
-    marginBottom: 20,
-    marginTop: 10,
+  listContainer: {
+    paddingHorizontal: SIZES.large,
   },
-  card: {
-    backgroundColor: 'white',
-    borderRadius: 12,
-    padding: 20,
-    marginVertical: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
-    elevation: 3,
+  header: {
+    padding: SIZES.large,
+    paddingTop: SIZES.xlarge,
   },
-  connectedCard: {
-    borderLeftWidth: 6,
-    borderLeftColor: COLORS.success,
+  headerTitle: {
+    fontSize: SIZES.h2,
+    fontWeight: FONTS.bold,
+    color: COLORS.black,
   },
-  disconnectedCard: {
-    borderLeftWidth: 6,
-    borderLeftColor: COLORS.warning,
-  },
-  highlightCard: {
-    backgroundColor: '#E3F2FD', // Light blue background
-    borderLeftWidth: 6,
-    borderLeftColor: COLORS.primary,
-  },
-  smallCard: {
-    padding: 16,
-  },
-  cardTitle: {
+  headerSubtitle: {
     fontSize: SIZES.large,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 8,
+    color: COLORS.gray,
   },
-  medicationName: {
-    fontSize: SIZES.large,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 4,
+  sectionTitle: {
+    fontSize: SIZES.xlarge,
+    fontWeight: FONTS.semiBold,
+    color: COLORS.black,
+    marginTop: SIZES.xlarge,
+    marginBottom: SIZES.medium,
   },
-  medicationTime: {
-    fontSize: SIZES.medium,
-    color: COLORS.text,
-    marginBottom: 4,
-  },
-  medicationDetail: {
-    fontSize: SIZES.small,
-    color: '#666',
-    marginBottom: 12,
-  },
-  primaryButton: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
+  statusCard: {
+    ...commonStyles.shadow,
+    backgroundColor: COLORS.white,
+    padding: SIZES.medium,
+    borderRadius: SIZES.base,
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'space-between',
+  },
+  statusText: {
+    fontSize: SIZES.large,
+    fontWeight: FONTS.semiBold,
+  },
+  statusIndicator: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    marginLeft: SIZES.small,
+  },
+  statusConnecting: {
+    backgroundColor: COLORS.warning,
+  },
+  statusOnline: {
+    backgroundColor: COLORS.success,
+  },
+  statusOffline: {
+    backgroundColor: COLORS.danger,
+  },
+  upcomingCard: {
+    ...commonStyles.shadow,
+    backgroundColor: COLORS.patientPrimary,
+    borderRadius: SIZES.medium,
+    padding: SIZES.large,
+    marginTop: SIZES.medium,
+  },
+  upcomingTime: {
+    fontSize: SIZES.h1,
+    fontWeight: FONTS.bold,
+    color: COLORS.white,
+  },
+  upcomingMedName: {
+    fontSize: SIZES.xlarge,
+    fontWeight: FONTS.semiBold,
+    color: COLORS.white,
+  },
+  upcomingDose: {
+    fontSize: SIZES.large,
+    color: COLORS.white,
+    opacity: 0.9,
+    marginTop: SIZES.base,
+  },
+  medCard: {
+    ...commonStyles.shadow,
+    backgroundColor: COLORS.white,
+    borderRadius: SIZES.base,
+    padding: SIZES.medium,
+    marginBottom: SIZES.medium,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  medInfo: {
+    flex: 1,
+  },
+  medName: {
+    fontSize: SIZES.large,
+    fontWeight: FONTS.semiBold,
+    color: COLORS.black,
+  },
+  medDose: {
+    fontSize: SIZES.medium,
+    color: COLORS.gray,
+    marginTop: 2,
+  },
+  medTime: {
+    fontSize: SIZES.large,
+    fontWeight: FONTS.bold,
+    color: COLORS.patientPrimary,
+    marginLeft: SIZES.small,
+  },
+  gridContainer: {
+    flex: 1,
+    padding: SIZES.small,
+    backgroundColor: COLORS.patientBackground,
+  },
+  compartmentCell: {
+    flex: 1,
+    margin: SIZES.base,
+    aspectRatio: 1,
+    borderRadius: SIZES.medium,
+    justifyContent: 'center',
+    alignItems: 'center',
+    ...commonStyles.shadow,
+  },
+  cellUnset: {
+    backgroundColor: COLORS.white,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+    borderColor: COLORS.gray,
+  },
+  cellSetFull: {
+    backgroundColor: COLORS.patientPrimary,
+  },
+  cellSetEmpty: {
+    backgroundColor: COLORS.danger,
+  },
+  cellText: {
+    fontSize: SIZES.medium,
+    fontWeight: FONTS.semiBold,
+    color: COLORS.white,
+    textAlign: 'center',
+    padding: SIZES.base,
+  },
+  cellTextUnset: {
+    color: COLORS.gray,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: SIZES.medium,
+    borderTopRightRadius: SIZES.medium,
+    padding: SIZES.large,
+    maxHeight: '85%',
+  },
+  modalTitle: {
+    fontSize: SIZES.h3,
+    fontWeight: FONTS.bold,
+    color: COLORS.black,
+    marginBottom: SIZES.medium,
+  },
+  dayToggleContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginVertical: SIZES.medium,
+  },
+  dayToggle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.lightGray,
+  },
+  dayToggleSelected: {
+    backgroundColor: COLORS.patientPrimary,
+  },
+  dayToggleText: {
+    fontSize: SIZES.medium,
+    fontWeight: FONTS.bold,
+    color: COLORS.black,
+  },
+  dayToggleTextSelected: {
+    color: COLORS.white,
+  },
+  modalButtonContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: SIZES.large,
+  },
+  modalButton: {
+    flex: 1,
+    marginHorizontal: SIZES.base,
+  },
+  legendContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: SIZES.medium,
+    paddingHorizontal: SIZES.base,
+    backgroundColor: COLORS.white,
+    borderRadius: SIZES.base,
+    margin: SIZES.base,
+    ...commonStyles.shadow,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  legendColorBox: {
+    width: 20,
+    height: 20,
+    borderRadius: 4,
+    marginRight: SIZES.base,
+    borderWidth: 1,
+    borderColor: COLORS.lightGray,
+  },
+  legendText: {
+    fontSize: SIZES.small,
+    fontWeight: FONTS.medium,
+  },
+  devButtonContainer: {
+    padding: SIZES.base,
+    margin: SIZES.base,
+  },
+  activityListContainer: {
+    padding: SIZES.large,
+  },
+  activityItem: {
+    ...commonStyles.shadow,
+    backgroundColor: COLORS.white,
+    borderRadius: SIZES.base,
+    padding: SIZES.medium,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: SIZES.medium,
+  },
+  activityIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: SIZES.medium,
+  },
+  activityTextContainer: {
+    flex: 1,
+  },
+  activityTitle: {
+    fontSize: SIZES.large,
+    fontWeight: FONTS.semiBold,
+    color: COLORS.black,
+  },
+  activityMessage: {
+    fontSize: SIZES.medium,
+    color: COLORS.gray,
+    marginTop: 2,
+  },
+  activityTimestamp: {
+    fontSize: SIZES.small,
+    color: COLORS.gray,
+    position: 'absolute',
+    top: 0,
+    right: 0,
+  },
+  activitySuccess: {
+    backgroundColor: COLORS.success,
+  },
+  activityWarning: {
+    backgroundColor: COLORS.warning,
+  },
+  activityAlert: {
+    backgroundColor: COLORS.danger,
+  },
+  emptyListContainer: {
+    flex: 1,
+    height: SIZES.height * 0.6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyListText: {
+    fontSize: SIZES.large,
+    color: COLORS.gray,
+    textAlign: 'center',
+    marginTop: SIZES.medium,
+  },
+  profileHeader: {
+    padding: SIZES.large,
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.lightGray,
+    paddingTop: SIZES.xlarge,
+  },
+  profileAvatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: COLORS.patientPrimary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: SIZES.medium,
+  },
+  profileAvatarText: {
+    fontSize: SIZES.h1,
+    color: COLORS.white,
+    fontWeight: FONTS.bold,
+  },
+  profileName: {
+    fontSize: SIZES.h3,
+    fontWeight: FONTS.bold,
+    color: COLORS.black,
+  },
+  profileEmail: {
+    fontSize: SIZES.large,
+    color: COLORS.gray,
+    marginTop: SIZES.base / 2,
+  },
+  profileRoleBadge: {
+    marginTop: SIZES.small,
+    paddingVertical: SIZES.base,
+    paddingHorizontal: SIZES.xxlarge,
+    borderRadius: SIZES.large,
+    backgroundColor: COLORS.patientPrimary,
+    ...commonStyles.shadow,
+  },
+  profileRoleBadgeText: {
+    color: COLORS.white,
+    fontSize: SIZES.medium,
+    fontWeight: FONTS.bold,
+    textTransform: 'uppercase',
+  },
+  profileSection: {
+    marginTop: SIZES.medium,
+  },
+  profileSectionTitle: {
+    fontSize: SIZES.large,
+    fontWeight: FONTS.bold,
+    color: COLORS.gray,
+    paddingHorizontal: SIZES.large,
+    marginBottom: SIZES.base,
+  },
+  profileRow: {
+    backgroundColor: COLORS.white,
+    paddingVertical: SIZES.medium,
+    paddingHorizontal: SIZES.large,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.lightGray,
+  },
+  profileRowClickable: {},
+  profileRowLabel: {
+    fontSize: SIZES.large,
+    color: COLORS.black,
+  },
+  profileRowValue: {
+    fontSize: SIZES.large,
+    color: COLORS.gray,
+  },
+  qrContainer: {
+    alignItems: 'center',
+    marginVertical: SIZES.medium,
+  },
+  qrPlaceholder: {
+    width: 200,
+    height: 200,
+    backgroundColor: COLORS.lightGray,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: SIZES.base,
+  },
+  qrCodeText: {
+    fontSize: SIZES.large,
+    fontWeight: FONTS.bold,
+    color: COLORS.black,
+    marginTop: SIZES.medium,
+    textAlign: 'center',
+  },
+  settingsContainer: {
+    flex: 1,
+    backgroundColor: COLORS.patientBackground,
+  },
+  settingsRow: {
+    backgroundColor: COLORS.white,
+    paddingVertical: SIZES.medium,
+    paddingHorizontal: SIZES.large,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.lightGray,
+  },
+  settingsRowText: {
+    fontSize: SIZES.large,
+    color: COLORS.black,
+  },
+  dangerSection: {
+    marginTop: SIZES.xxlarge,
+    paddingHorizontal: SIZES.large,
+  },
+  dangerButton: {
+    backgroundColor: COLORS.danger,
+    padding: SIZES.medium,
+    borderRadius: SIZES.base,
+    alignItems: 'center',
+  },
+  dangerButtonText: {
+    color: COLORS.white,
+    fontSize: SIZES.large,
+    fontWeight: FONTS.bold,
   },
 });

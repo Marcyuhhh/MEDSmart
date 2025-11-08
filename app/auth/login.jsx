@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../_layout';
-import Button from '../../components/common/button';
+import Button from '../../components/common/button'; 
 import Input from '../../components/common/input';
 import { authStyles } from '../../styles/auth.styles';
 import { COLORS } from '../../styles/common.styles';
@@ -25,11 +25,24 @@ export default function LoginScreen() {
 
   const handleBypassToPatient = () => {
     console.log('Bypassing to Patient Dashboard...');
-    setAuth({ uid: 'dummy-patient-id', role: 'patient' });
+
+    const mockUser = {
+       uid: 'dummy-patient-id',
+        role: 'patient',
+        name: 'Marc',
+        email: 'marc@patient.com',
+        age: '72',
+        contact: '09123456789',
+        bloodType: 'O+',
+        emergencyContactName: 'Jane Doe',
+        emergencyContactPhone: '09987654321',
+        deviceId: 'MEDSMART-A1B2',
+        };
+    setAuth(mockUser);
   };
   
   const handleForgotPassword = () => {
-    console.log('Forgot Password pressed');
+    console.log('Navigating to Forgot Password');
     router.push('/auth/forgot-password');
   };
 
