@@ -1,12 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
   FlatList,
   RefreshControl,
   ActivityIndicator,
+  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { patientStyles } from '../../styles/patient.styles';
 import { COLORS } from '../../styles/common.styles';
@@ -36,6 +38,12 @@ const ActivityItem = ({ item }) => {
 
   return (
     <View style={patientStyles.activityItem}>
+      {item.isRead ? (
+        <View style={patientStyles.unreadDotPlaceholder} />
+      ) : (
+        <View style={patientStyles.unreadDot} />
+      )}
+      
       <View style={[patientStyles.activityIconContainer, style]}>
         <Ionicons name={iconName} size={24} color={iconColor} />
       </View>
@@ -57,9 +65,10 @@ export default function ActivityScreen() {
     console.log("Fetching activity data...");
     
     const mockData = [
-      { id: '1', type: 'success', title: 'Dose Taken', message: 'Metformin from A1', time: '8:02 AM' },
-      { id: '2', type: 'alert', title: 'Dose Missed', message: 'Lisinopril from B2', time: 'Yesterday' },
-      { id: '3', type: 'warning', title: 'Dose Due Soon', message: 'Take Atorvastatin in 5 min', time: 'Yesterday' },
+      { id: '1', type: 'success', title: 'Dose Taken', message: 'Metformin from A1', time: '8:02 AM', isRead: false },
+      { id: '2', type: 'alert', title: 'Dose Missed', message: 'Lisinopril from B2', time: 'Yesterday', isRead: false },
+      { id: '3', type: 'warning', title: 'Dose Due Soon', message: 'Take Atorvastatin in 5 min', time: 'Yesterday', isRead: true },
+      { id: '4', type: 'success', title: 'Dose Taken', message: 'Lisinopril from B2', time: 'Yesterday', isRead: true },
     ];
     setActivities(mockData);
   };
@@ -77,8 +86,36 @@ export default function ActivityScreen() {
     setIsRefreshing(false);
   }, []);
 
+  const handleMarkAllAsRead = () => {
+    console.log("Marking all activities as read...");
+    const updatedActivities = activities.map(item => 
+      item.isRead ? item : { ...item, isRead: true }
+    );
+    setActivities(updatedActivities);
+  };
+  
+  const unreadCount = useMemo(() => {
+    return activities.filter(item => !item.isRead).length;
+  }, [activities]);
+
   return (
     <SafeAreaView style={patientStyles.container} edges={['bottom', 'left', 'right']}>
+      <Stack.Screen 
+        options={{
+          headerShown: true,
+          title: 'Activity',
+          headerStyle: { backgroundColor: COLORS.patientPrimary },
+          headerTintColor: COLORS.white,
+          headerRight: () => (
+            unreadCount > 0 ? (
+              <TouchableOpacity style={patientStyles.headerButton} onPress={handleMarkAllAsRead}>
+                <Text style={patientStyles.headerButtonText}>Mark All Read</Text>
+              </TouchableOpacity>
+            ) : null
+          ),
+        }}
+      />
+    
       {isLoading ? (
         <ActivityIndicator size="large" color={COLORS.patientPrimary} style={{ marginTop: 20 }} />
       ) : (

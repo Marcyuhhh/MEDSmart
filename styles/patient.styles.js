@@ -238,6 +238,27 @@ export const patientStyles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: SIZES.medium,
   },
+  unreadDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: COLORS.patientPrimary,
+    marginHorizontal: SIZES.small,
+  },
+  unreadDotPlaceholder: {
+    width: 8,
+    height: 8,
+    marginHorizontal: SIZES.small,
+  },
+  headerButton: {
+    marginRight: SIZES.medium,
+    padding: SIZES.base,
+  },
+  headerButtonText: {
+    color: COLORS.white,
+    fontSize: SIZES.large,
+    fontWeight: FONTS.medium,
+  },
   activityIconContainer: {
     width: 44,
     height: 44,
@@ -320,16 +341,16 @@ export const patientStyles = StyleSheet.create({
     marginTop: SIZES.base / 2,
   },
   profileRoleBadge: {
-    marginTop: SIZES.small,
+    marginTop: SIZES.medium,
     paddingVertical: SIZES.base,
-    paddingHorizontal: SIZES.xxlarge,
+    paddingHorizontal: SIZES.medium,
     borderRadius: SIZES.large,
     backgroundColor: COLORS.patientPrimary,
     ...commonStyles.shadow,
   },
   profileRoleBadgeText: {
     color: COLORS.white,
-    fontSize: SIZES.medium,
+    fontSize: SIZES.small,
     fontWeight: FONTS.bold,
     textTransform: 'uppercase',
   },

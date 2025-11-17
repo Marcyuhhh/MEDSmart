@@ -29,6 +29,7 @@ export default function PatientLayout() {
         name="activity"
         options={{
           title: 'Activity',
+          headerShown: false,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'notifications' : 'notifications-outline'} size={24} color={color} />
           ),
