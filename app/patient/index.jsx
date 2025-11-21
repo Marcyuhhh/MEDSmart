@@ -6,6 +6,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { patientStyles } from '../../styles/patient.styles';
 import { COLORS } from '../../styles/common.styles';
 import { useAuth } from '../_layout';
+import { doc, onSnapshot, getDoc } from 'firebase/firestore'; // Firebase imports
+import { db } from '../../config/firebaseConfig';
 
 const MedCard = ({ item }) => (
   <View style={patientStyles.medCard}>
@@ -52,33 +54,95 @@ const StatusCard = ({ status }) => {
 export default function PatientDashboard() {
   const { user } = useAuth();
   
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState('connecting');
   const [upcomingDose, setUpcomingDose] = useState(null);
   const [followingDoses, setFollowingDoses] = useState([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const onRefresh = useCallback(() => {
-    console.log("Refreshing dashboard data...");
-    setIsRefreshing(true);
-    setTimeout(() => {
-      setUpcomingDose({ time: '8:01 AM', medName: 'Metformin', dose: '1 pill · A1' });
-      setConnectionStatus('online');
-      setIsRefreshing(false);
-    }, 1000);
-  }, []);
-
+  // --- 1. LISTEN FOR DEVICE STATUS ---
   useEffect(() => {
-    console.log("Fetching initial dashboard data...");
-    setIsLoading(true);
-    setUpcomingDose({ time: '8:00 AM', medName: 'Metformin', dose: '1 pill · A1' });
-    setFollowingDoses([
-      { id: '1', time: '12:00 PM', medName: 'Lisinopril', dose: '1 pill · B2' },
-      { id: '2', time: '7:00 PM', medName: 'Metformin', dose: '1 pill · A1' },
-    ]);
-    setConnectionStatus('online');
-    setIsLoading(false);
-  }, []);
+    if (!user) return;
+    
+    const unsubStatus = onSnapshot(doc(db, 'deviceStatus', user.uid), (docSnap) => {
+      if (docSnap.exists()) {
+        setConnectionStatus(docSnap.data().status || 'offline');
+      } else {
+        setConnectionStatus('offline');
+      }
+    }, (error) => {
+      console.error("Error listening to device status:", error);
+      setConnectionStatus('offline');
+    });
+    
+    return () => unsubStatus();
+  }, [user]);
+
+  // --- 2. FETCH SCHEDULES ---
+  const fetchDashboardData = async () => {
+    if (!user) {
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+    
+    console.log("Fetching dashboard data from Firebase...");
+    
+    try {
+      const medboxSnap = await getDoc(doc(db, 'medboxes', user.uid));
+      
+      if (medboxSnap.exists()) {
+        const data = medboxSnap.data();
+        const allMeds = [];
+
+        // Convert Object to Array and filter only configured compartments
+        Object.keys(data).forEach(key => {
+          const item = data[key];
+          if (item.medName && !item.isEmpty) { // Only include configured AND non-empty compartments
+            allMeds.push({
+              id: key,
+              medName: item.medName,
+              dose: `1 pill · ${key}`,
+              time: item.time || '00:00',
+              description: item.description || ''
+            });
+          }
+        });
+
+        // Sort by time
+        allMeds.sort((a, b) => a.time.localeCompare(b.time));
+
+        if (allMeds.length > 0) {
+          setUpcomingDose(allMeds[0]);
+          setFollowingDoses(allMeds.slice(1));
+        } else {
+          setUpcomingDose(null);
+          setFollowingDoses([]);
+        }
+      } else {
+        // No medbox data found
+        setUpcomingDose(null);
+        setFollowingDoses([]);
+      }
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+      // Keep existing data or set to empty if error
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  };
+
+  // Initial data fetch
+  useEffect(() => {
+    fetchDashboardData();
+  }, [user]);
+
+  // Refresh function
+  const onRefresh = useCallback(() => {
+    setIsRefreshing(true);
+    fetchDashboardData();
+  }, [user]);
 
   const ListHeader = () => (
     <View style={patientStyles.header}>
@@ -108,6 +172,13 @@ export default function PatientDashboard() {
             colors={[COLORS.patientPrimary]}
           />
         }
+        ListEmptyComponent={() => (
+          !isLoading && !upcomingDose ? (
+            <Text style={{textAlign: 'center', color: COLORS.gray, fontSize: 16, marginTop: 20, marginBottom: 20}}>
+              No medications scheduled. Set them up in the MedBox tab.
+            </Text>
+          ) : null
+        )}
       />
     </SafeAreaView>
   );

@@ -12,6 +12,10 @@ import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { patientStyles } from '../../styles/patient.styles';
 import { COLORS } from '../../styles/common.styles';
+import { useAuth } from '../_layout';
+// --- FIREBASE IMPORTS ---
+import { collection, query, where, orderBy, getDocs, writeBatch, doc } from 'firebase/firestore';
+import { db } from '../../config/firebaseConfig';
 
 const ActivityItem = ({ item }) => {
   let iconName;
@@ -57,46 +61,104 @@ const ActivityItem = ({ item }) => {
 };
 
 export default function ActivityScreen() {
+  const { user } = useAuth();
   const [activities, setActivities] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const fetchData = () => {
-    console.log("Fetching activity data...");
+  // --- 1. REAL FETCH ---
+  const fetchData = async () => {
+    if (!user) {
+      setActivities([]);
+      return;
+    }
     
-    const mockData = [
-      { id: '1', type: 'success', title: 'Dose Taken', message: 'Metformin from A1', time: '8:02 AM', isRead: false },
-      { id: '2', type: 'alert', title: 'Dose Missed', message: 'Lisinopril from B2', time: 'Yesterday', isRead: false },
-      { id: '3', type: 'warning', title: 'Dose Due Soon', message: 'Take Atorvastatin in 5 min', time: 'Yesterday', isRead: true },
-      { id: '4', type: 'success', title: 'Dose Taken', message: 'Lisinopril from B2', time: 'Yesterday', isRead: true },
-    ];
-    setActivities(mockData);
+    try {
+      // Query: Get logs for this user, ordered by time
+      const q = query(
+        collection(db, 'activity_log'),
+        where('userId', '==', user.uid),
+        orderBy('timestamp', 'desc')
+      );
+
+      const querySnapshot = await getDocs(q);
+      const logs = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        logs.push({ 
+          id: doc.id, 
+          ...data,
+          // Convert Firestore timestamp to display time
+          time: formatTimestamp(data.timestamp),
+          // Ensure isRead is boolean
+          isRead: data.isRead || false
+        });
+      });
+      
+      setActivities(logs);
+    } catch (error) {
+      console.error("Fetch error:", error);
+      // Fallback to empty array if error
+      setActivities([]);
+    }
+  };
+
+  // Helper function to format Firestore timestamp
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return 'Unknown time';
+    
+    try {
+      // If it's a Firestore timestamp
+      if (timestamp.toDate) {
+        const date = timestamp.toDate();
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      }
+      
+      // If it's already a string or other format
+      return timestamp;
+    } catch (error) {
+      console.error("Error formatting timestamp:", error);
+      return 'Unknown time';
+    }
   };
 
   useEffect(() => {
     setIsLoading(true);
-    fetchData();
-    setIsLoading(false);
-  }, []);
+    fetchData().then(() => setIsLoading(false));
+  }, [user]);
 
   const onRefresh = useCallback(() => {
-    console.log("Refreshing activity data...");
     setIsRefreshing(true);
-    fetchData();
-    setIsRefreshing(false);
-  }, []);
+    fetchData().then(() => setIsRefreshing(false));
+  }, [user]);
 
-  const handleMarkAllAsRead = () => {
-    console.log("Marking all activities as read...");
-    const updatedActivities = activities.map(item => 
-      item.isRead ? item : { ...item, isRead: true }
-    );
-    setActivities(updatedActivities);
+  // --- 2. REAL MARK ALL READ ---
+  const handleMarkAllAsRead = async () => {
+    if (!user) return;
+    
+    const unreadItems = activities.filter(item => !item.isRead);
+    if (unreadItems.length === 0) return;
+    
+    console.log("Marking all as read in Firebase...");
+    
+    const batch = writeBatch(db);
+    
+    unreadItems.forEach(item => {
+      const docRef = doc(db, 'activity_log', item.id);
+      batch.update(docRef, { isRead: true });
+    });
+
+    try {
+      await batch.commit();
+      // Optimistic update
+      setActivities(prev => prev.map(item => ({ ...item, isRead: true })));
+    } catch (error) {
+      console.error("Batch update failed", error);
+      Alert.alert("Error", "Failed to mark activities as read");
+    }
   };
   
-  const unreadCount = useMemo(() => {
-    return activities.filter(item => !item.isRead).length;
-  }, [activities]);
+  const unreadCount = useMemo(() => activities.filter(item => !item.isRead).length, [activities]);
 
   return (
     <SafeAreaView style={patientStyles.container} edges={['bottom', 'left', 'right']}>

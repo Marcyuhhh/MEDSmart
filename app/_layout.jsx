@@ -1,58 +1,42 @@
 import React, { useState, createContext, useContext, useEffect } from 'react';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { ActivityIndicator, View } from 'react-native';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../config/firebaseConfig';
+import { COLORS } from '../styles/common.styles';
 
 const AuthContext = createContext(null);
+
 export const useAuth = () => useContext(AuthContext);
 
-function useProtectedRoute(user) {
+function useProtectedRoute(user, isInitialized) {
   const segments = useSegments();
   const router = useRouter();
 
   useEffect(() => {
-    console.log('--- 2. GUARD CHECKING --- User:', user, 'Segments:', segments);
+    if (!isInitialized) return;
 
-    if (segments.length === 0) {
-      return;
-    }
-
+    // FIX: Check for 'auth' folder, not '(auth)'
     const inAuthGroup = segments[0] === 'auth';
 
     if (!user && !inAuthGroup) {
-      console.log('--- 3. GUARD ACTION --- No user! Redirecting to login.');
-      router.replace('/login');
+      // FIX: Redirect to /auth/login
+      router.replace('/auth/login');
     } else if (user && user.role === 'patient' && segments[0] !== 'patient') {
-      console.log('--- 3. GUARD ACTION --- Patient found! Redirecting to patient home.');
+      // FIX: Redirect to /patient
       router.replace('/patient');
     } else if (user && user.role === 'caregiver' && segments[0] !== 'caregiver') {
-      console.log('--- 3. GUARD ACTION --- Caregiver found! Redirecting to caregiver home.');
+      // FIX: Redirect to /caregiver
       router.replace('/caregiver');
     }
-  }, [user, segments, router]);
+  }, [user, segments, isInitialized]);
 }
 
 function RootLayoutNav() {
-  const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setTimeout(() => {
-      setLoading(false);
-    }, 1000);
-  }, []);
-
-  useProtectedRoute(user);
-
-  if (loading) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" />
-      </View>
-    );
-  }
-
   return (
     <Stack screenOptions={{ headerShown: false }}>
+      {/* FIX: Names match your actual folder names (no parentheses) */}
       <Stack.Screen name="auth" />
       <Stack.Screen name="patient" />
       <Stack.Screen name="caregiver" />
@@ -61,10 +45,61 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  const [auth, setAuth] = useState(null);
+  return <RootLayoutProvider />;
+}
+
+function RootLayoutProvider() {
+  const [user, setUser] = useState(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        try {
+          const userDocRef = doc(db, 'users', firebaseUser.uid);
+          const userDoc = await getDoc(userDocRef);
+          if (userDoc.exists()) {
+            setUser({ uid: firebaseUser.uid, email: firebaseUser.email, ...userDoc.data() });
+          } else {
+            setUser(null);
+          }
+        } catch (error) {
+          console.error(error);
+          setUser(null);
+        }
+      } else {
+        setUser(null);
+      }
+      setIsInitialized(true);
+    });
+    return unsubscribe;
+  }, []);
+
+  useProtectedRoute(user, isInitialized);
+
+  const setAuth = async (action) => {
+    if (!action) {
+      await signOut(auth);
+      setUser(null);
+      return;
+    }
+    if (typeof action === 'function') {
+      setUser(prev => action(prev));
+    } else {
+      setUser(action);
+    }
+  };
+
+  if (!isInitialized) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={COLORS.patientPrimary} />
+      </View>
+    );
+  }
 
   return (
-    <AuthContext.Provider value={{ user: auth, setAuth }}>
+    <AuthContext.Provider value={{ user, setAuth }}>
       <RootLayoutNav />
     </AuthContext.Provider>
   );

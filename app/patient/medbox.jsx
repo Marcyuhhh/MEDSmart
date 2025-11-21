@@ -1,20 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  TouchableOpacity,
-  Modal,
-  ScrollView,
-  Alert,
-  RefreshControl,
-} from 'react-native';
+import { View, Text, FlatList, TouchableOpacity, Modal, ScrollView, Alert, RefreshControl, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { patientStyles } from '../../styles/patient.styles';
 import { COLORS } from '../../styles/common.styles';
 import Input from '../../components/common/input';
 import Button from '../../components/common/button';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
+import { useAuth } from '../_layout';
+
+import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+import { db } from '../../config/firebaseConfig';
 
 const DAYS_OF_WEEK = ['Su', 'M', 'Tu', 'W', 'Th', 'F', 'Sa'];
 
@@ -146,12 +141,9 @@ const GridLegend = () => (
 );
 
 export default function MedBoxScreen() {
-  const [compartments, setCompartments] = useState([
-    { id: 'A1', medName: null, isEmpty: false }, { id: 'A2', medName: null, isEmpty: false }, { id: 'A3', medName: null, isEmpty: false },
-    { id: 'B1', medName: null, isEmpty: false }, { id: 'B2', medName: null, isEmpty: false }, { id: 'B3', medName: null, isEmpty: false },
-    { id: 'C1', medName: null, isEmpty: false }, { id: 'C2', medName: null, isEmpty: false }, { id: 'C3', medName: null, isEmpty: false },
-  ]);
-  
+  const { user } = useAuth();
+  const [compartments, setCompartments] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [selectedCompartment, setSelectedCompartment] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -165,9 +157,46 @@ export default function MedBoxScreen() {
     }, 1000);
   }, []);
 
+  // Real-time Firebase listener
   useEffect(() => {
-    // TODO: Connect to Firebase
-  }, []);
+    if (!user) return;
+
+    const medBoxRef = doc(db, 'medboxes', user.uid);
+    const unsubscribe = onSnapshot(medBoxRef, async (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const compartmentsArray = Object.keys(data).map(key => ({ 
+          id: key, 
+          ...data[key] 
+        })).sort((a, b) => a.id.localeCompare(b.id));
+        
+        setCompartments(compartmentsArray);
+        setIsLoading(false);
+        setIsRefreshing(false);
+      } else {
+        console.log("Creating new MedBox for user...");
+        const initialData = {};
+        const ids = ['A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3'];
+        ids.forEach(id => {
+          initialData[id] = {
+            medName: null,
+            description: null,
+            days: [],
+            time: null,
+            isEmpty: false,
+          };
+        });
+        await setDoc(medBoxRef, initialData);
+      }
+    }, (error) => {
+      console.error("Error fetching MedBox data: ", error);
+      Alert.alert("Error", "Failed to load MedBox data.");
+      setIsLoading(false);
+      setIsRefreshing(false);
+    });
+    
+    return () => unsubscribe();
+  }, [user]);
 
   const handleOpenModal = (compartment) => {
     setSelectedCompartment(compartment);
@@ -179,28 +208,42 @@ export default function MedBoxScreen() {
     setSelectedCompartment(null);
   };
 
-  const handleSaveSchedule = (compartmentId, scheduleData) => {
-    setCompartments(prev =>
-      prev.map(c => 
-        c.id === compartmentId ? { ...c, ...scheduleData } : c
-      )
-    );
-    console.log('Saving to', compartmentId, scheduleData);
-    handleCloseModal();
+  // Real Firebase save
+  const handleSaveSchedule = async (compartmentId, scheduleData) => {
+    try {
+      const medboxRef = doc(db, 'medboxes', user.uid);
+      
+      await updateDoc(medboxRef, {
+        [compartmentId]: scheduleData
+      });
+      
+      console.log('Saved to Firebase:', compartmentId);
+      handleCloseModal();
+    } catch (error) {
+      console.error("Error saving schedule:", error);
+      Alert.alert("Save Failed", "Please check your internet connection.");
+    }
   };
-  
-  const onSimulateTakeDose = () => {
+
+  // Real Firebase simulation
+  const onSimulateTakeDose = async () => {
     const firstFullCompartment = compartments.find(c => c.medName && !c.isEmpty);
     if (!firstFullCompartment) {
       Alert.alert("Simulation Failed", "All compartments are already empty or unset.");
       return;
     }
-    setCompartments(prev =>
-      prev.map(c =>
-        c.id === firstFullCompartment.id ? { ...c, isEmpty: true } : c
-      )
-    );
-    Alert.alert("Simulation Success", `Compartment ${firstFullCompartment.id} (${firstFullCompartment.medName}) is now marked as EMPTY (red).`);
+    
+    try {
+      const medboxRef = doc(db, 'medboxes', user.uid);
+      await updateDoc(medboxRef, {
+        [`${firstFullCompartment.id}.isEmpty`]: true
+      });
+      
+      Alert.alert("Simulation Success", `Compartment ${firstFullCompartment.id} (${firstFullCompartment.medName}) is now marked as EMPTY.`);
+    } catch (error) {
+      console.error("Error simulating dose:", error);
+      Alert.alert("Simulation Failed", "Could not update database.");
+    }
   };
 
   const renderCompartment = ({ item }) => {
@@ -218,6 +261,7 @@ export default function MedBoxScreen() {
       textStyle = patientStyles.cellText;
       cellContent = item.medName;
     }
+    
     return (
       <TouchableOpacity
         style={[patientStyles.compartmentCell, style]}
@@ -227,6 +271,14 @@ export default function MedBoxScreen() {
       </TouchableOpacity>
     );
   };
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={patientStyles.gridContainer}>
+        <ActivityIndicator size="large" color={COLORS.patientPrimary} style={{ marginTop: 50 }} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={patientStyles.gridContainer}>

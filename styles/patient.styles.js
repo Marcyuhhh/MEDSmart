@@ -284,8 +284,8 @@ export const patientStyles = StyleSheet.create({
     fontSize: SIZES.small,
     color: COLORS.gray,
     position: 'absolute',
-    top: 0,
-    right: 0,
+    top: 25,
+    right: 10,
   },
   activitySuccess: {
     backgroundColor: COLORS.success,

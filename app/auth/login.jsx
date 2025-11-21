@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../_layout';
-import Button from '../../components/common/button'; 
+import Button from '../../components/common/button';
 import Input from '../../components/common/input';
 import { authStyles } from '../../styles/auth.styles';
 import { COLORS } from '../../styles/common.styles';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../../config/firebaseConfig';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -14,35 +16,25 @@ export default function LoginScreen() {
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleLogin = () => {
-    console.log('Attempting login with:', email, password);
-    Alert.alert(
-      'Login Clicked', 
-      'This will connect to Firebase. Use the "Bypass" button for now.'
-    );
+  const handleLogin = async () => {
+    if (!email || !password) {
+      Alert.alert("Error", "Please enter both email and password.");
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await signInWithEmailAndPassword(auth, email, password);
+      console.log("Login successful!");
+    } catch (error) {
+      Alert.alert("Login Failed", "Invalid email or password.");
+      setIsLoading(false);
+    }
   };
 
-  const handleBypassToPatient = () => {
-    console.log('Bypassing to Patient Dashboard...');
-
-    const mockUser = {
-       uid: 'dummy-patient-id',
-        role: 'patient',
-        name: 'Marc',
-        email: 'marc@patient.com',
-        age: '72',
-        contact: '09123456789',
-        bloodType: 'O+',
-        emergencyContactName: 'Jane Doe',
-        emergencyContactPhone: '09987654321',
-        deviceId: 'MEDSMART-A1B2',
-        };
-    setAuth(mockUser);
-  };
-  
+  // FIX: Updated path to /auth/forgot-password
   const handleForgotPassword = () => {
-    console.log('Navigating to Forgot Password');
     router.push('/auth/forgot-password');
   };
 
@@ -50,19 +42,8 @@ export default function LoginScreen() {
     <SafeAreaView style={authStyles.container}>
       <Text style={authStyles.title}>MEDSmart</Text>
       
-      <Input 
-        placeholder="Email" 
-        value={email} 
-        onChangeText={setEmail} 
-        keyboardType="email-address"
-        autoCapitalize="none"
-      />
-      <Input 
-        placeholder="Password" 
-        value={password} 
-        onChangeText={setPassword} 
-        secureTextEntry 
-      />
+      <Input placeholder="Email" value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" />
+      <Input placeholder="Password" value={password} onChangeText={setPassword} secureTextEntry />
       
       <View style={authStyles.forgotPasswordContainer}>
         <TouchableOpacity onPress={handleForgotPassword}>
@@ -70,25 +51,18 @@ export default function LoginScreen() {
         </TouchableOpacity>
       </View>
 
-      <Button 
-        title="Login" 
-        onPress={handleLogin} 
-        color={COLORS.patientPrimary}
-      />
+      {isLoading ? (
+        <ActivityIndicator size="large" color={COLORS.patientPrimary} style={{marginVertical: 20}} />
+      ) : (
+        <Button title="Login" onPress={handleLogin} color={COLORS.patientPrimary} />
+      )}
       
+      {/* FIX: Updated path to /auth/role-selection */}
       <TouchableOpacity onPress={() => router.push('/auth/role-selection')}>
         <Text style={authStyles.link}>
           Don't have an account? <Text style={authStyles.linkBold}>Sign up</Text>
         </Text>
       </TouchableOpacity>
-      
-      <View style={authStyles.devBypassContainer}>
-        <Button 
-          title="Bypass to Patient Home (Dev)" 
-          onPress={handleBypassToPatient} 
-          color={COLORS.gray}
-        />
-      </View>
     </SafeAreaView>
   );
 }
