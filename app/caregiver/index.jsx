@@ -1,34 +1,70 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
-  View, 
-  Text, 
-  FlatList, 
-  ActivityIndicator, 
-  RefreshControl,
-  Alert 
+  View, Text, FlatList, ActivityIndicator, RefreshControl, Alert
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-// --- NEW IMPORT: useRouter for navigation ---
 import { useRouter } from 'expo-router';
 import { caregiverStyles } from '../../styles/caregiver.styles';
 import { COLORS } from '../../styles/common.styles';
 import { useAuth } from '../_layout';
 import Button from '../../components/common/button';
 
-// --- Sub-components (Unchanged) ---
+// --- FIREBASE IMPORTS ---
+import { doc, getDoc, collection, addDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../../config/firebaseConfig';
+
+// --- HELPERS ---
+const parseTime = (timeStr) => {
+  if (!timeStr) return -1;
+  try {
+    const cleanStr = timeStr.replace(/[\u202f\u00a0]/g, " ").trim();
+    const match = cleanStr.match(/(\d{1,2}):(\d{2})\s*([AaPp][Mm])?/);
+    if (!match) return -1;
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const modifier = match[3] ? match[3].toUpperCase() : null;
+    if (modifier) {
+      if (hours === 12) hours = 0;
+      if (modifier === 'PM') hours += 12;
+    }
+    return hours * 60 + minutes;
+  } catch (e) { return -1; }
+};
+
+const getCurrentDay = () => {
+  const days = ['Su', 'M', 'Tu', 'W', 'Th', 'F', 'Sa'];
+  return days[new Date().getDay()];
+};
+
+// --- SUB-COMPONENTS ---
+
+// 1. Modified Patient Card with "MONITORING" Label
 const PatientCard = ({ patient }) => (
-  <View style={caregiverStyles.patientCard}>
-    <View style={caregiverStyles.patientAvatar}>
-      <Text style={caregiverStyles.patientAvatarText}>
-        {patient.name.charAt(0)}
-      </Text>
-    </View>
-    <View>
-      <Text style={caregiverStyles.patientName}>{patient.name}</Text>
-      <Text style={caregiverStyles.patientStatus}>
-        Condition: {patient.condition}
-      </Text>
+  <View style={[caregiverStyles.patientCard, { flexDirection: 'column', alignItems: 'flex-start', marginTop: 10 }]}>
+    <Text style={{ 
+      fontSize: 14, 
+      fontWeight: 'bold', 
+      color: COLORS.caregiverPrimary, 
+      marginBottom: 15,
+      letterSpacing: 1,
+      textTransform: 'uppercase' 
+    }}>
+      Currently Monitoring
+    </Text>
+
+    <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%' }}>
+      <View style={caregiverStyles.patientAvatar}>
+        <Text style={caregiverStyles.patientAvatarText}>
+          {patient?.name ? patient.name.charAt(0) : '?'}
+        </Text>
+      </View>
+      <View>
+        <Text style={caregiverStyles.patientName}>{patient?.name || 'Unknown'}</Text>
+        <Text style={caregiverStyles.patientStatus}>
+          Contact: {patient?.contact || 'N/A'}
+        </Text>
+      </View>
     </View>
   </View>
 );
@@ -37,7 +73,7 @@ const UpcomingCard = ({ dose }) => {
   if (!dose) {
     return (
       <View style={[caregiverStyles.upcomingCard, { backgroundColor: COLORS.gray }]}>
-        <Text style={caregiverStyles.upcomingMedName}>Patient has taken all doses.</Text>
+        <Text style={caregiverStyles.upcomingMedName}>All doses taken for today.</Text>
       </View>
     );
   }
@@ -53,188 +89,178 @@ const UpcomingCard = ({ dose }) => {
   );
 };
 
-const StatusCard = ({ status }) => {
-  const getStatusStyle = () => {
-    if (status === 'online') return caregiverStyles.statusOnline;
-    if (status === 'offline') return caregiverStyles.statusOffline;
-    return caregiverStyles.statusConnecting;
-  };
-  
-  return (
-    <View style={caregiverStyles.statusCard}>
-      <Text style={caregiverStyles.statusText}>
-        Device Status: {status === 'online' ? 'Online' : 'Offline'}
-      </Text>
-      <View style={[caregiverStyles.statusIndicator, getStatusStyle()]} />
-    </View>
-  );
-};
-
-const RecentAlertItem = ({ item }) => (
+// Reusing the activityItem style for the list of meds
+const MedCard = ({ item }) => (
   <View style={caregiverStyles.activityItem}>
     <View style={[
       caregiverStyles.activityIconContainer, 
-      item.type === 'alert' ? caregiverStyles.activityAlert : caregiverStyles.activityWarning
+      { backgroundColor: COLORS.caregiverPrimary }
     ]}>
-      <Ionicons 
-        name={item.type === 'alert' ? 'alert-circle' : 'time'} 
-        size={24} 
-        color={COLORS.white} 
-      />
+      <Ionicons name="medkit" size={24} color={COLORS.white} />
     </View>
     <View style={caregiverStyles.activityTextContainer}>
-      <Text style={caregiverStyles.activityTitle}>{item.title}</Text>
-      <Text style={caregiverStyles.activityMessage}>{item.message}</Text>
+      <Text style={caregiverStyles.activityTitle}>{item.medName}</Text>
+      <Text style={caregiverStyles.activityMessage}>{item.dose}</Text>
     </View>
     <Text style={caregiverStyles.activityTimestamp}>{item.time}</Text>
   </View>
 );
 
-// --- Main Caregiver Dashboard Component ---
-
+// --- MAIN COMPONENT ---
 export default function CaregiverDashboard() {
   const { user } = useAuth();
   const router = useRouter();
   
-  // --- 1. Connection Check ---
   const isPatientConnected = user?.linkedPatientId ? true : false;
 
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   
-  const [patientData, setPatientData] = useState(null);
-  const [deviceStatus, setDeviceStatus] = useState('offline');
+  const [patientProfile, setPatientProfile] = useState(null);
   const [upcomingDose, setUpcomingDose] = useState(null);
-  const [recentAlerts, setRecentAlerts] = useState([]);
+  const [followingDoses, setFollowingDoses] = useState([]);
 
-  const fetchData = () => {
-    // Only fetch if connected
+  // --- FETCH DATA ---
+  const fetchPatientDetails = async () => {
     if (!isPatientConnected) return;
-
-    console.log("Fetching patient data...");
-    // TODO: Connect to Firebase
     
-    // --- Mock Data (Only loads if connected) ---
-    setPatientData({
-      name: user?.linkedPatientName || 'Marc (Patient)',
-      condition: 'Hypertension',
-    });
-    setDeviceStatus('online');
-    setUpcomingDose({
-      time: '2:00 PM',
-      medName: 'Lisinopril',
-      dose: '1 pill · Compartment B2'
-    });
-    setRecentAlerts([
-      { id: '1', type: 'alert', title: 'Missed Dose', message: 'Metformin was not taken.', time: 'Yesterday' },
-      { id: '2', type: 'warning', title: 'Low Battery', message: 'MedBox battery is at 15%.', time: '2 days ago' },
-    ]);
+    try {
+      // A. Get Patient Profile
+      const patientDoc = await getDoc(doc(db, 'users', user.linkedPatientId));
+      if (patientDoc.exists()) {
+        setPatientProfile(patientDoc.data());
+      }
+
+      // B. Get Schedule
+      const medboxSnap = await getDoc(doc(db, 'medboxes', user.linkedPatientId));
+      if (medboxSnap.exists()) {
+        const data = medboxSnap.data();
+        const today = getCurrentDay();
+        let todaysMeds = [];
+        
+        Object.keys(data).forEach(key => {
+          const item = data[key];
+          if (item.medName && item.days && item.days.includes(today)) {
+            todaysMeds.push({
+              id: key, 
+              medName: item.medName, 
+              dose: `1 pill · ${key}`,
+              time: item.time, 
+              minutes: parseTime(item.time), 
+              isEmpty: item.isEmpty
+            });
+          }
+        });
+        
+        todaysMeds.sort((a, b) => a.minutes - b.minutes);
+        
+        // Filter out empty/taken meds
+        const untakenMeds = todaysMeds.filter(m => !m.isEmpty && m.minutes !== -1);
+        
+        if (untakenMeds.length > 0) {
+          setUpcomingDose(untakenMeds[0]);
+          setFollowingDoses(untakenMeds.slice(1));
+        } else {
+          setUpcomingDose(null);
+          setFollowingDoses([]);
+        }
+      }
+    } catch (e) {
+      console.error("Caregiver fetch error:", e);
+    } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
+    }
   };
 
   useEffect(() => {
     setIsLoading(true);
-    fetchData();
-    setIsLoading(false);
-  }, [isPatientConnected]); // Re-run if connection status changes
+    fetchPatientDetails();
+  }, [user?.linkedPatientId]);
 
   const onRefresh = useCallback(() => {
     setIsRefreshing(true);
-    fetchData();
-    setTimeout(() => setIsRefreshing(false), 1000);
-  }, [isPatientConnected]);
+    fetchPatientDetails();
+  }, [user?.linkedPatientId]);
 
-  const handleSendReminder = () => {
-    Alert.alert("Reminder Sent", `Notification sent to patient.`);
+  const handleSendReminder = async () => {
+    if (!isPatientConnected) return;
+    try {
+        await addDoc(collection(db, 'activity_log'), {
+            userId: user.linkedPatientId,
+            type: 'warning',
+            title: 'Caregiver Reminder',
+            message: `${user.name || 'Caregiver'} sent you a reminder.`,
+            timestamp: serverTimestamp(),
+            isRead: false,
+            compartmentId: 'REMINDER'
+        });
+        Alert.alert("Reminder Sent", "The patient will see this in their Activity log.");
+    } catch (e) {
+        Alert.alert("Error", "Could not send reminder.");
+    }
   };
 
-  // --- RENDER: No Patient State ---
+  // --- RENDER: NO PATIENT ---
   if (!isPatientConnected) {
     return (
       <SafeAreaView style={caregiverStyles.container}>
         <View style={caregiverStyles.header}>
-          <Text style={caregiverStyles.headerTitle}>Caregiver Dashboard</Text>
-          <Text style={caregiverStyles.headerSubtitle}>Welcome, {user?.name || 'Caregiver'}</Text>
+          {/* No extra text here, just the empty state */}
         </View>
-        
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 }}>
           <Ionicons name="people-outline" size={80} color={COLORS.gray} />
-          <Text style={{ 
-            fontSize: 20, 
-            fontWeight: 'bold', 
-            color: COLORS.black, 
-            marginTop: 20 
-          }}>
-            No Patient Linked
-          </Text>
-          <Text style={{ 
-            fontSize: 16, 
-            color: COLORS.gray, 
-            textAlign: 'center', 
-            marginTop: 10, 
-            marginBottom: 30 
-          }}>
+          <Text style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.black, marginTop: 20 }}>No Patient Linked</Text>
+          <Text style={{ fontSize: 16, color: COLORS.gray, textAlign: 'center', marginTop: 10, marginBottom: 30 }}>
             To start monitoring, please pair with a patient using their Invite Code.
           </Text>
-          
-          <Button 
-            title="Link Patient Now" 
-            onPress={() => router.push('/(caregiver)/profile')}
-            color={COLORS.caregiverPrimary}
-          />
+          <Button title="Link Patient Now" onPress={() => router.push('/caregiver/profile')} color={COLORS.caregiverPrimary} />
         </View>
       </SafeAreaView>
     );
   }
 
-  // --- RENDER: Connected State (Dashboard) ---
+  // --- RENDER: DASHBOARD ---
   const ListHeader = () => (
     <View style={caregiverStyles.header}>
-      <Text style={caregiverStyles.headerTitle}>Caregiver Dashboard</Text>
-      <Text style={caregiverStyles.headerSubtitle}>Monitoring Dashboard</Text>
+      {/* 1. Patient Card (Monitoring Label Inside) */}
+      <PatientCard patient={patientProfile} />
 
-      <Text style={caregiverStyles.sectionTitle}>Monitoring</Text>
-      <PatientCard patient={patientData || {name: 'Loading...', condition: '...'}} />
-
-      <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10}}>
-        <Text style={[caregiverStyles.sectionTitle, {marginTop: 0}]}>Status</Text>
-      </View>
-      <StatusCard status={deviceStatus} />
-      
-      <View style={{ marginTop: 10 }}>
-        <Button 
-          title="Send Reminder Nudge" 
-          onPress={handleSendReminder}
-          color={COLORS.caregiverPrimary}
-        />
-      </View>
-
+      {/* 2. Next Dose Section */}
       <Text style={caregiverStyles.sectionTitle}>Patient's Next Dose</Text>
       <UpcomingCard dose={upcomingDose} />
 
-      <Text style={caregiverStyles.sectionTitle}>Recent Alerts</Text>
-      {isLoading && <ActivityIndicator size="large" color={COLORS.caregiverPrimary} />}
+      {/* 3. Nudge Button */}
+      <View style={{ marginTop: 20, marginBottom: 10 }}>
+        <Button 
+          title="Send Reminder Nudge" 
+          onPress={handleSendReminder} 
+          color={COLORS.caregiverPrimary} 
+        />
+      </View>
+
+      {/* 4. Following Section */}
+      <Text style={caregiverStyles.sectionTitle}>Following Medications</Text>
     </View>
   );
 
   return (
     <SafeAreaView style={caregiverStyles.container}>
       <FlatList
-        data={recentAlerts}
-        renderItem={({ item }) => <RecentAlertItem item={item} />}
+        data={followingDoses}
+        renderItem={({ item }) => <MedCard item={item} />}
         keyExtractor={(item) => item.id}
         ListHeaderComponent={ListHeader}
         contentContainerStyle={caregiverStyles.listContainer}
         refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={onRefresh}
-            colors={[COLORS.caregiverPrimary]}
-          />
+          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={[COLORS.caregiverPrimary]} />
         }
         ListEmptyComponent={
-          <Text style={{textAlign: 'center', color: COLORS.gray, marginTop: 20}}>
-            No recent alerts. Everything looks good!
-          </Text>
+          !isLoading && (
+            <Text style={{textAlign: 'center', color: COLORS.gray, marginTop: 20}}>
+               No more doses scheduled for today.
+            </Text>
+          )
         }
       />
     </SafeAreaView>

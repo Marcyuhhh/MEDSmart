@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -18,10 +18,9 @@ import { useAuth } from '../_layout';
 import Button from '../../components/common/button';
 import Input from '../../components/common/input';
 import { authStyles } from '../../styles/auth.styles';
-
-// --- FIREBASE IMPORTS ---
 import { doc, updateDoc, deleteDoc, collection, query, where, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../../config/firebaseConfig';
+import { linkDeviceToAccount, subscribeToDeviceStatus } from '../../services/medboxService';
 
 const InfoRow = ({ label, value }) => (
   <View style={patientStyles.profileRow}>
@@ -41,22 +40,32 @@ export default function ProfileScreen() {
   const { user, setAuth } = useAuth();
   const router = useRouter();
   
-  // --- STATE ---
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [isPairingModalVisible, setIsPairingModalVisible] = useState(false);
   const [isEmergencyModalVisible, setIsEmergencyModalVisible] = useState(false);
   const [isRoleModalVisible, setIsRoleModalVisible] = useState(false);
+  const [isDeviceModalVisible, setIsDeviceModalVisible] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [deviceStatus, setDeviceStatus] = useState('not_connected');
 
-  // Edit Profile Inputs
   const [editName, setEditName] = useState(user?.name || '');
   const [editAge, setEditAge] = useState(user?.age || '');
   const [editContact, setEditContact] = useState(user?.contact || '');
-  
-  // Emergency Contact Inputs
   const [emergencyName, setEmergencyName] = useState(user?.emergencyContactName || '');
   const [emergencyPhone, setEmergencyPhone] = useState(user?.emergencyContactPhone || '');
+  const [inputDeviceId, setInputDeviceId] = useState('');
+
+  useEffect(() => {
+    if (!user || !user.deviceId) {
+      setDeviceStatus('not_connected');
+      return;
+    }
+    const unsubscribe = subscribeToDeviceStatus(user.deviceId, (status) => {
+      setDeviceStatus(status);
+    });
+    return () => unsubscribe();
+  }, [user]);
 
   const onRefresh = useCallback(() => {
     setIsRefreshing(true);
@@ -70,7 +79,6 @@ export default function ProfileScreen() {
     ]);
   };
 
-  // --- 1. REAL PROFILE UPDATE ---
   const handleSaveProfile = async () => {
     if (!user) return;
     setIsLoading(true);
@@ -81,7 +89,6 @@ export default function ProfileScreen() {
         age: editAge,
         contact: editContact
       });
-      // Update local state immediately
       setAuth(prev => ({ ...prev, name: editName, age: editAge, contact: editContact }));
       setIsEditModalVisible(false);
       Alert.alert("Success", "Profile updated.");
@@ -93,7 +100,6 @@ export default function ProfileScreen() {
     }
   };
   
-  // --- 2. REAL EMERGENCY CONTACT UPDATE ---
   const handleSaveEmergencyContact = async () => {
     if (!user) return;
     setIsLoading(true);
@@ -103,7 +109,6 @@ export default function ProfileScreen() {
         emergencyContactName: emergencyName,
         emergencyContactPhone: emergencyPhone
       });
-      // Update local state immediately
       setAuth(prev => ({ ...prev, emergencyContactName: emergencyName, emergencyContactPhone: emergencyPhone }));
       setIsEmergencyModalVisible(false);
       Alert.alert("Success", "Emergency contact updated.");
@@ -115,7 +120,24 @@ export default function ProfileScreen() {
     }
   };
 
-  // --- 3. REAL ROLE SWITCH (DESTRUCTIVE) ---
+  const handleConnectDevice = async () => {
+    if (!inputDeviceId.startsWith("MEDSMART_")) {
+      Alert.alert("Invalid ID", "Device ID must start with 'MEDSMART_'");
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await linkDeviceToAccount(user.uid, inputDeviceId);
+      setAuth(prev => ({ ...prev, deviceId: inputDeviceId }));
+      Alert.alert("Success", "Device Connected! The green light should turn solid.");
+      setIsDeviceModalVisible(false);
+    } catch (error) {
+      Alert.alert("Error", "Failed to link device.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const handleRoleSwitch = () => {
     Alert.alert(
       "Confirm Role Switch",
@@ -129,10 +151,7 @@ export default function ProfileScreen() {
             if (!user) return;
             setIsLoading(true);
             try {
-              // A. Delete MedBox Document
               await deleteDoc(doc(db, 'medboxes', user.uid));
-
-              // B. Delete Activity Logs
               const q = query(collection(db, 'activity_log'), where('userId', '==', user.uid));
               const snapshot = await getDocs(q);
               const batch = writeBatch(db);
@@ -140,8 +159,6 @@ export default function ProfileScreen() {
                 batch.delete(doc.ref);
               });
               await batch.commit();
-
-              // C. Update User Role to 'caregiver' in Firestore
               await updateDoc(doc(db, 'users', user.uid), {
                 role: 'caregiver',
                 deviceId: null,
@@ -149,13 +166,8 @@ export default function ProfileScreen() {
                 emergencyContactPhone: null,
                 bloodType: null 
               });
-
-              // FIX: Update state. The _layout will see role='caregiver' and redirect to /caregiver
               setAuth(prev => ({ ...prev, role: 'caregiver' }));
-              
-              // Optional explicit redirect (Safe to keep)
               router.replace('/caregiver'); 
-              
               setIsRoleModalVisible(false);
             } catch (error) {
               console.error("Role switch error:", error);
@@ -180,7 +192,6 @@ export default function ProfileScreen() {
           />
         }
       >
-        {/* Profile Header */}
         <View style={patientStyles.profileHeader}>
           <View style={patientStyles.profileAvatar}>
             <Text style={patientStyles.profileAvatarText}>
@@ -189,8 +200,6 @@ export default function ProfileScreen() {
           </View>
           <Text style={patientStyles.profileName}>{user?.name || 'Patient Name'}</Text>
           <Text style={patientStyles.profileEmail}>{user?.email || 'patient@email.com'}</Text>
-          
-          {/* Role Badge Button */}
           <TouchableOpacity 
             style={patientStyles.profileRoleBadge}
             onPress={() => setIsRoleModalVisible(true)}
@@ -201,7 +210,6 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Personal Info Section */}
         <View style={patientStyles.profileSection}>
           <Text style={patientStyles.profileSectionTitle}>PERSONAL INFORMATION</Text>
           <InfoRow label="Age" value={user?.age} />
@@ -210,7 +218,6 @@ export default function ProfileScreen() {
           <ClickableRow label="Edit Profile" onPress={() => setIsEditModalVisible(true)} />
         </View>
         
-        {/* Emergency Contact Section */}
         <View style={patientStyles.profileSection}>
           <Text style={patientStyles.profileSectionTitle}>EMERGENCY CONTACT</Text>
           <InfoRow label="Name" value={user?.emergencyContactName} />
@@ -221,33 +228,34 @@ export default function ProfileScreen() {
           />
         </View>
         
-        {/* Device & Caregiver Section */}
         <View style={patientStyles.profileSection}>
           <Text style={patientStyles.profileSectionTitle}>DEVICE & CAREGIVER</Text>
-          <InfoRow label="Device Status" value={user?.deviceId || 'Not Connected'} />
+          <InfoRow 
+            label="Device Status" 
+            value={
+              deviceStatus === 'online' ? '🟢 Online' : 
+              deviceStatus === 'offline' ? '🔴 Offline' : '⚪ Not Connected'
+            } 
+          />
+          <InfoRow label="Device ID" value={user?.deviceId && user.deviceId !== 'Not Connected' ? user.deviceId : '-'} />
+          <ClickableRow label="Connect Device" onPress={() => setIsDeviceModalVisible(true)} iconName="hardware-chip-outline" />
           <ClickableRow label="Pair with Caregiver" onPress={() => setIsPairingModalVisible(true)} />
         </View>
 
-        {/* Settings Section */}
         <View style={patientStyles.profileSection}>
           <Text style={patientStyles.profileSectionTitle}>SETTINGS</Text>
-          
-          {/* FIX: Updated path to /patient/settings */}
           <ClickableRow 
             label="App Settings" 
             onPress={() => router.push('/patient/settings')} 
           />
-          
           <ClickableRow 
             label="Log Out" 
             onPress={handleLogout} 
             iconName="log-out-outline" 
           />
         </View>
-
       </ScrollView>
 
-      {/* --- Edit Profile Modal --- */}
       <Modal
         visible={isEditModalVisible}
         animationType="slide"
@@ -260,7 +268,6 @@ export default function ProfileScreen() {
             <Input placeholder="Full Name" value={editName} onChangeText={setEditName} />
             <Input placeholder="Age" value={editAge} onChangeText={setEditAge} keyboardType="numeric" />
             <Input placeholder="Contact Number" value={editContact} onChangeText={setEditContact} keyboardType="phone-pad" />
-            
             {isLoading ? (
                <ActivityIndicator color={COLORS.patientPrimary} style={{marginTop:10}}/> 
             ) : (
@@ -270,7 +277,6 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </Modal>
       
-      {/* --- Pair with Caregiver Modal --- */}
       <Modal
         visible={isPairingModalVisible}
         animationType="slide"
@@ -296,7 +302,6 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* --- Edit Emergency Contact Modal --- */}
       <Modal
         visible={isEmergencyModalVisible}
         animationType="slide"
@@ -326,7 +331,33 @@ export default function ProfileScreen() {
         </TouchableOpacity>
       </Modal>
 
-      {/* --- Role Switch Modal --- */}
+      <Modal
+        visible={isDeviceModalVisible}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setIsDeviceModalVisible(false)}
+      >
+        <TouchableOpacity style={patientStyles.modalBackdrop} activeOpacity={1} onPressOut={() => setIsDeviceModalVisible(false)}>
+          <View style={patientStyles.modalContent} onStartShouldSetResponder={() => true}>
+            <Text style={patientStyles.modalTitle}>Connect Hardware</Text>
+            <Text style={authStyles.instructionText}>
+              Enter the Device ID shown on the Serial Monitor (e.g., MEDSMART_...).
+            </Text>
+            <Input 
+              placeholder="MEDSMART_XXXXXXXX" 
+              value={inputDeviceId} 
+              onChangeText={setInputDeviceId} 
+              autoCapitalize="characters"
+            />
+            {isLoading ? (
+               <ActivityIndicator color={COLORS.patientPrimary} style={{marginTop:10}}/> 
+            ) : (
+               <Button title="Connect" onPress={handleConnectDevice} color={COLORS.patientPrimary} />
+            )}
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
       <Modal
         visible={isRoleModalVisible}
         animationType="slide"
@@ -339,7 +370,6 @@ export default function ProfileScreen() {
             <Text style={authStyles.instructionText}>
               Switching to a Caregiver role will **permanently delete** all of your patient data, including schedules and activity logs. This cannot be undone.
             </Text>
-            
             <View style={{marginTop: 10}}>
               {isLoading ? (
                  <ActivityIndicator color={COLORS.danger} style={{marginBottom:10}}/> 
@@ -359,7 +389,6 @@ export default function ProfileScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
-      
     </SafeAreaView>
   );
 }

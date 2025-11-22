@@ -1,24 +1,44 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, FlatList, TouchableOpacity, Modal, ScrollView, Alert, RefreshControl, ActivityIndicator } from 'react-native';
+import {
+  View,
+  Text,
+  FlatList,
+  TouchableOpacity,
+  Modal,
+  ScrollView,
+  Alert,
+  RefreshControl,
+  ActivityIndicator
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { patientStyles } from '../../styles/patient.styles';
 import { COLORS } from '../../styles/common.styles';
-import Input from '../../components/common/input';
-import Button from '../../components/common/button';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import { useAuth } from '../_layout';
 
-import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../../config/firebaseConfig';
+// Components
+import Input from '../../components/common/input';
+import Button from '../../components/common/button';
+
+// Services
+import { 
+  subscribeToMedbox, 
+  saveCompartment, 
+  deleteCompartment 
+} from '../../services/medboxService';
 
 const DAYS_OF_WEEK = ['Su', 'M', 'Tu', 'W', 'Th', 'F', 'Sa'];
 
-const MedicationConfigForm = ({ compartment, onClose, onSave }) => {
+// --- Medication Form Component ---
+const MedicationConfigForm = ({ compartment, onClose, onSave, onDelete }) => {
   const [medName, setMedName] = useState('');
   const [description, setDescription] = useState('');
   const [days, setDays] = useState([]);
   const [time, setTime] = useState(null);
   const [isTimePickerVisible, setTimePickerVisible] = useState(false);
+
+  // Check if we are editing an existing med (to show Delete button)
+  const isEditing = compartment && compartment.medName;
 
   useEffect(() => {
     if (compartment && compartment.medName) {
@@ -64,6 +84,21 @@ const MedicationConfigForm = ({ compartment, onClose, onSave }) => {
       isEmpty: false,
     };
     onSave(compartment.id, scheduleData);
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      "Delete Medication",
+      `Are you sure you want to remove ${medName} from this compartment?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Delete", 
+          style: "destructive", 
+          onPress: () => onDelete(compartment.id) 
+        }
+      ]
+    );
   };
 
   return (
@@ -113,6 +148,18 @@ const MedicationConfigForm = ({ compartment, onClose, onSave }) => {
         </View>
       </View>
 
+      {/* Show Delete Button ONLY if editing */}
+      {isEditing && (
+        <TouchableOpacity 
+          style={{ marginTop: 15, padding: 10, alignItems: 'center' }}
+          onPress={handleDelete}
+        >
+          <Text style={{ color: COLORS.danger, fontWeight: 'bold', fontSize: 16 }}>
+            Remove Medication
+          </Text>
+        </TouchableOpacity>
+      )}
+
       <DateTimePickerModal
         isVisible={isTimePickerVisible}
         mode="time"
@@ -123,6 +170,7 @@ const MedicationConfigForm = ({ compartment, onClose, onSave }) => {
   );
 };
 
+// --- Legend Component ---
 const GridLegend = () => (
   <View style={patientStyles.legendContainer}>
     <View style={patientStyles.legendItem}>
@@ -140,6 +188,7 @@ const GridLegend = () => (
   </View>
 );
 
+// --- Main Screen ---
 export default function MedBoxScreen() {
   const { user } = useAuth();
   const [compartments, setCompartments] = useState([]);
@@ -149,52 +198,28 @@ export default function MedBoxScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const onRefresh = useCallback(() => {
-    console.log("Refreshing MedBox data...");
     setIsRefreshing(true);
     setTimeout(() => {
-      console.log("MedBox data refreshed.");
       setIsRefreshing(false);
     }, 1000);
   }, []);
 
-  // Real-time Firebase listener
+  // --- SERVICE SUBSCRIPTION ---
   useEffect(() => {
     if (!user) return;
-
-    const medBoxRef = doc(db, 'medboxes', user.uid);
-    const unsubscribe = onSnapshot(medBoxRef, async (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        const compartmentsArray = Object.keys(data).map(key => ({ 
-          id: key, 
-          ...data[key] 
-        })).sort((a, b) => a.id.localeCompare(b.id));
-        
-        setCompartments(compartmentsArray);
-        setIsLoading(false);
-        setIsRefreshing(false);
-      } else {
-        console.log("Creating new MedBox for user...");
-        const initialData = {};
-        const ids = ['A1', 'A2', 'A3', 'B1', 'B2', 'B3', 'C1', 'C2', 'C3'];
-        ids.forEach(id => {
-          initialData[id] = {
-            medName: null,
-            description: null,
-            days: [],
-            time: null,
-            isEmpty: false,
-          };
-        });
-        await setDoc(medBoxRef, initialData);
-      }
-    }, (error) => {
-      console.error("Error fetching MedBox data: ", error);
-      Alert.alert("Error", "Failed to load MedBox data.");
-      setIsLoading(false);
-      setIsRefreshing(false);
-    });
     
+    const unsubscribe = subscribeToMedbox(
+      user.uid,
+      (data) => {
+        setCompartments(data);
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error("MedBox Listener Error:", error);
+        setIsLoading(false);
+      }
+    );
+
     return () => unsubscribe();
   }, [user]);
 
@@ -208,41 +233,31 @@ export default function MedBoxScreen() {
     setSelectedCompartment(null);
   };
 
-  // Real Firebase save
+  // --- SAVE ---
   const handleSaveSchedule = async (compartmentId, scheduleData) => {
     try {
-      const medboxRef = doc(db, 'medboxes', user.uid);
-      
-      await updateDoc(medboxRef, {
-        [compartmentId]: scheduleData
-      });
-      
-      console.log('Saved to Firebase:', compartmentId);
+      await saveCompartment(
+        user.uid, 
+        user.deviceId, // Pass device ID
+        compartmentId, 
+        scheduleData
+      );
+      console.log('Saved via Service');
       handleCloseModal();
     } catch (error) {
-      console.error("Error saving schedule:", error);
-      Alert.alert("Save Failed", "Please check your internet connection.");
+      Alert.alert("Save Failed", "Check internet connection.");
     }
   };
 
-  // Real Firebase simulation
-  const onSimulateTakeDose = async () => {
-    const firstFullCompartment = compartments.find(c => c.medName && !c.isEmpty);
-    if (!firstFullCompartment) {
-      Alert.alert("Simulation Failed", "All compartments are already empty or unset.");
-      return;
-    }
-    
+  // --- DELETE ---
+  const handleDeleteSchedule = async (compartmentId) => {
     try {
-      const medboxRef = doc(db, 'medboxes', user.uid);
-      await updateDoc(medboxRef, {
-        [`${firstFullCompartment.id}.isEmpty`]: true
-      });
-      
-      Alert.alert("Simulation Success", `Compartment ${firstFullCompartment.id} (${firstFullCompartment.medName}) is now marked as EMPTY.`);
+      await deleteCompartment(user.uid, user.deviceId, compartmentId);
+      Alert.alert("Success", "Medication removed.");
+      handleCloseModal();
     } catch (error) {
-      console.error("Error simulating dose:", error);
-      Alert.alert("Simulation Failed", "Could not update database.");
+      console.error("Error deleting:", error);
+      Alert.alert("Delete Failed", "Could not remove medication.");
     }
   };
 
@@ -288,16 +303,6 @@ export default function MedBoxScreen() {
         keyExtractor={(item) => item.id}
         numColumns={3}
         ListHeaderComponent={<GridLegend />}
-        ListFooterComponent={
-          <View style={patientStyles.devButtonContainer}>
-            <Button
-              title="Simulate Take Medicine (Dev)"
-              onPress={onSimulateTakeDose}
-              color={COLORS.warning}
-              textColor={COLORS.black}
-            />
-          </View>
-        }
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -323,6 +328,7 @@ export default function MedBoxScreen() {
               compartment={selectedCompartment}
               onClose={handleCloseModal}
               onSave={handleSaveSchedule}
+              onDelete={handleDeleteSchedule}
             />
           </View>
         </TouchableOpacity>

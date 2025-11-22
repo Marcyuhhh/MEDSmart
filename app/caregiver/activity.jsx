@@ -1,28 +1,22 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  RefreshControl,
-  ActivityIndicator,
-  TouchableOpacity,
-  Image
-} from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, FlatList, RefreshControl, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Stack, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
 import { caregiverStyles } from '../../styles/caregiver.styles';
 import { COLORS } from '../../styles/common.styles';
 import { useAuth } from '../_layout';
 import Button from '../../components/common/button';
 
-// --- Activity Item Component (Green Theme) ---
+// --- SERVICE IMPORTS ---
+import { subscribeToActivity, markAllAsRead } from '../../services/activityService';
+
+// --- Activity Item Component ---
 const ActivityItem = ({ item }) => {
   let iconName;
   let style;
   let iconColor = COLORS.white;
 
-  // Reuse the logic but apply caregiver styles
   switch (item.type) {
     case 'success':
       iconName = 'checkmark-circle';
@@ -40,9 +34,22 @@ const ActivityItem = ({ item }) => {
       iconName = 'help-circle';
       style = { backgroundColor: COLORS.gray };
   }
+  
+  const formatTime = (timestamp) => {
+    if (!timestamp) return 'Recent';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleString();
+  };
 
   return (
     <View style={caregiverStyles.activityItem}>
+      {/* Read Dot (Visible only for Unread) */}
+      {!item.isRead ? (
+        <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: COLORS.caregiverPrimary, marginRight: 10 }} />
+      ) : (
+        <View style={{ width: 8, height: 8, marginRight: 10 }} />
+      )}
+
       <View style={[caregiverStyles.activityIconContainer, style]}>
         <Ionicons name={iconName} size={24} color={iconColor} />
       </View>
@@ -50,60 +57,74 @@ const ActivityItem = ({ item }) => {
         <Text style={caregiverStyles.activityTitle}>{item.title}</Text>
         <Text style={caregiverStyles.activityMessage}>{item.message}</Text>
       </View>
-      <Text style={caregiverStyles.activityTimestamp}>{item.time}</Text>
+      <Text style={caregiverStyles.activityTimestamp}>{formatTime(item.timestamp)}</Text>
     </View>
   );
 };
 
-// --- Main Component ---
+// --- MAIN COMPONENT ---
 export default function CaregiverActivityScreen() {
   const { user } = useAuth();
   const router = useRouter();
 
   const [activities, setActivities] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [patientName, setPatientName] = useState(user?.linkedPatientName || 'Patient');
 
-  // --- 1. Connection Logic ---
-  // We check if the logged-in caregiver has a patient ID linked
   const isPatientConnected = user?.linkedPatientId ? true : false; 
 
-  // --- DATA FETCHING ---
-  const fetchData = () => {
-    if (!isPatientConnected) return;
-
-    console.log("Fetching patient activity log...");
-    // TODO: Connect to Firebase
-    // Fetch `activity_log/{user.linkedPatientId}`
-    
-    // --- Mock Data (Only shown if connected) ---
-    setActivities([
-      { id: '1', type: 'alert', title: 'Missed Dose', message: 'Metformin from A1 (8:00 AM)', time: 'Today, 8:15 AM' },
-      { id: '2', type: 'success', title: 'Dose Taken', message: 'Lisinopril from B2', time: 'Yesterday, 2:05 PM' },
-      { id: '3', type: 'success', title: 'Dose Taken', message: 'Metformin from A1', time: 'Yesterday, 8:00 AM' },
-    ]);
-    // -------------------------------------------
-  };
-
+  // --- 1. REAL-TIME DATA SUBSCRIPTION ---
   useEffect(() => {
-    setIsLoading(true);
-    fetchData();
-    setIsLoading(false);
-  }, [isPatientConnected]);
+    if (!isPatientConnected) {
+        setIsLoading(false);
+        setActivities([]);
+        return;
+    }
+
+    // Subscribe to the linked patient's activity stream
+    const unsubscribe = subscribeToActivity(
+        user.linkedPatientId, 
+        (data) => {
+            setActivities(data);
+            setIsLoading(false);
+        },
+        (error) => {
+            console.error("Caregiver Activity Listener Error:", error);
+            setIsLoading(false);
+        }
+    );
+
+    return () => unsubscribe();
+  }, [isPatientConnected]); // Runs when patient link status changes
+
 
   const onRefresh = useCallback(() => {
     setIsRefreshing(true);
-    fetchData();
+    // Since the data is live via onSnapshot, we only simulate the delay
     setTimeout(() => setIsRefreshing(false), 1000);
-  }, [isPatientConnected]);
+  }, []);
+  
+  // --- MARK ALL READ HANDLER ---
+  const handleMarkAllAsRead = async () => {
+    if (!isPatientConnected) return;
+    try {
+        await markAllAsRead(user.linkedPatientId, activities);
+    } catch (e) {
+        Alert.alert("Error", "Failed to mark alerts as read.");
+    }
+  };
+
+  const unreadCount = useMemo(() => activities.filter(item => !item.isRead).length, [activities]);
+
 
   // --- RENDER: Header ---
   const Header = () => (
     <View style={caregiverStyles.header}>
-      <Text style={caregiverStyles.headerTitle}>Patient Activity</Text>
+      <Text style={caregiverStyles.headerTitle}>{patientName}'s Activity</Text>
       <Text style={caregiverStyles.headerSubtitle}>
         {isPatientConnected 
-          ? `Monitoring: ${user?.linkedPatientName || 'Patient'}` 
+          ? `Adherence history for ${patientName}` 
           : 'No Patient Connected'}
       </Text>
     </View>
@@ -116,18 +137,12 @@ export default function CaregiverActivityScreen() {
         <Header />
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 30 }}>
           <Ionicons name="link-outline" size={80} color={COLORS.gray} />
-          <Text style={{ 
-            fontSize: 18, 
-            color: COLORS.gray, 
-            textAlign: 'center', 
-            marginTop: 20, 
-            marginBottom: 30 
-          }}>
-            You are not linked to any patient yet. Pair with a patient to see their activity history.
+          <Text style={{ fontSize: 18, color: COLORS.gray, textAlign: 'center', marginTop: 20, marginBottom: 30 }}>
+            You are not linked to any patient yet.
           </Text>
           <Button 
             title="Go to Profile to Pair" 
-            onPress={() => router.push('/(caregiver)/profile')}
+            onPress={() => router.push('/caregiver/profile')}
             color={COLORS.caregiverPrimary}
           />
         </View>
@@ -138,7 +153,25 @@ export default function CaregiverActivityScreen() {
   // --- RENDER: Connected State ---
   return (
     <SafeAreaView style={caregiverStyles.container} edges={['top', 'left', 'right']}>
-      <Header />
+      {/* Custom Stack Header to include the Mark All Read button */}
+      <Stack.Screen 
+        options={{
+          headerShown: true,
+          title: `${patientName}'s Activity`,
+          headerStyle: { backgroundColor: COLORS.caregiverPrimary },
+          headerTintColor: COLORS.white,
+          headerRight: () => (
+            unreadCount > 0 ? (
+              <TouchableOpacity 
+                style={{ marginRight: 15 }} 
+                onPress={handleMarkAllAsRead}
+              >
+                <Text style={{ color: COLORS.white, fontWeight: 'bold' }}>Mark All Read</Text>
+              </TouchableOpacity>
+            ) : null
+          ),
+        }}
+      />
       
       {isLoading ? (
         <ActivityIndicator size="large" color={COLORS.caregiverPrimary} style={{ marginTop: 20 }} />
@@ -149,15 +182,11 @@ export default function CaregiverActivityScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={caregiverStyles.activityListContainer}
           refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={onRefresh}
-              colors={[COLORS.caregiverPrimary]}
-            />
+            <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={[COLORS.caregiverPrimary]} />
           }
           ListEmptyComponent={
             <Text style={{ textAlign: 'center', color: COLORS.gray, marginTop: 20 }}>
-              No recent activity recorded.
+              No activity history found for this patient.
             </Text>
           }
         />

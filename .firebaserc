@@ -1,0 +1,8 @@
+{
+  "projects": {
+    "default": "medsmart11-2025",
+    "MEDSMART": "medsmart-d8446"
+  },
+  "targets": {},
+  "etags": {}
+}

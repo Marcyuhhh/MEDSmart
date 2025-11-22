@@ -1,20 +1,12 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import {
-  View,
-  Text,
-  FlatList,
-  RefreshControl,
-  ActivityIndicator,
-  TouchableOpacity,
-} from 'react-native';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { View, Text, FlatList, RefreshControl, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { patientStyles } from '../../styles/patient.styles';
 import { COLORS } from '../../styles/common.styles';
 import { useAuth } from '../_layout';
-// --- FIREBASE IMPORTS ---
-import { collection, query, where, orderBy, getDocs, writeBatch, doc } from 'firebase/firestore';
+import { collection, query, where, orderBy, onSnapshot, writeBatch, doc } from 'firebase/firestore';
 import { db } from '../../config/firebaseConfig';
 
 const ActivityItem = ({ item }) => {
@@ -40,6 +32,12 @@ const ActivityItem = ({ item }) => {
       style = { backgroundColor: COLORS.gray };
   }
 
+  const formatTime = (timestamp) => {
+    if (!timestamp) return '';
+    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
     <View style={patientStyles.activityItem}>
       {item.isRead ? (
@@ -47,7 +45,6 @@ const ActivityItem = ({ item }) => {
       ) : (
         <View style={patientStyles.unreadDot} />
       )}
-      
       <View style={[patientStyles.activityIconContainer, style]}>
         <Ionicons name={iconName} size={24} color={iconColor} />
       </View>
@@ -55,7 +52,7 @@ const ActivityItem = ({ item }) => {
         <Text style={patientStyles.activityTitle}>{item.title}</Text>
         <Text style={patientStyles.activityMessage}>{item.message}</Text>
       </View>
-      <Text style={patientStyles.activityTimestamp}>{item.time}</Text>
+      <Text style={patientStyles.activityTimestamp}>{formatTime(item.timestamp)}</Text>
     </View>
   );
 };
@@ -66,96 +63,43 @@ export default function ActivityScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // --- 1. REAL FETCH ---
-  const fetchData = async () => {
-    if (!user) {
-      setActivities([]);
-      return;
-    }
-    
-    try {
-      // Query: Get logs for this user, ordered by time
-      const q = query(
-        collection(db, 'activity_log'),
-        where('userId', '==', user.uid),
-        orderBy('timestamp', 'desc')
-      );
-
-      const querySnapshot = await getDocs(q);
-      const logs = [];
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        logs.push({ 
-          id: doc.id, 
-          ...data,
-          // Convert Firestore timestamp to display time
-          time: formatTimestamp(data.timestamp),
-          // Ensure isRead is boolean
-          isRead: data.isRead || false
-        });
-      });
-      
-      setActivities(logs);
-    } catch (error) {
-      console.error("Fetch error:", error);
-      // Fallback to empty array if error
-      setActivities([]);
-    }
-  };
-
-  // Helper function to format Firestore timestamp
-  const formatTimestamp = (timestamp) => {
-    if (!timestamp) return 'Unknown time';
-    
-    try {
-      // If it's a Firestore timestamp
-      if (timestamp.toDate) {
-        const date = timestamp.toDate();
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      }
-      
-      // If it's already a string or other format
-      return timestamp;
-    } catch (error) {
-      console.error("Error formatting timestamp:", error);
-      return 'Unknown time';
-    }
-  };
-
   useEffect(() => {
-    setIsLoading(true);
-    fetchData().then(() => setIsLoading(false));
+    if (!user) return;
+    const q = query(
+      collection(db, 'activity_log'),
+      where('userId', '==', user.uid),
+      orderBy('timestamp', 'desc')
+    );
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const logs = [];
+      snapshot.forEach((doc) => {
+        logs.push({ id: doc.id, ...doc.data() });
+      });
+      setActivities(logs);
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }, (error) => {
+      console.log("Listening error:", error);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
   }, [user]);
 
   const onRefresh = useCallback(() => {
     setIsRefreshing(true);
-    fetchData().then(() => setIsRefreshing(false));
-  }, [user]);
+    setTimeout(() => setIsRefreshing(false), 1000);
+  }, []);
 
-  // --- 2. REAL MARK ALL READ ---
   const handleMarkAllAsRead = async () => {
     if (!user) return;
-    
+    const batch = writeBatch(db);
     const unreadItems = activities.filter(item => !item.isRead);
     if (unreadItems.length === 0) return;
-    
-    console.log("Marking all as read in Firebase...");
-    
-    const batch = writeBatch(db);
-    
     unreadItems.forEach(item => {
       const docRef = doc(db, 'activity_log', item.id);
       batch.update(docRef, { isRead: true });
     });
-
-    try {
-      await batch.commit();
-      // Optimistic update
-      setActivities(prev => prev.map(item => ({ ...item, isRead: true })));
-    } catch (error) {
-      console.error("Batch update failed", error);
-      Alert.alert("Error", "Failed to mark activities as read");
-    }
+    try { await batch.commit(); } catch (e) { console.error(e); }
   };
   
   const unreadCount = useMemo(() => activities.filter(item => !item.isRead).length, [activities]);
@@ -177,7 +121,6 @@ export default function ActivityScreen() {
           ),
         }}
       />
-    
       {isLoading ? (
         <ActivityIndicator size="large" color={COLORS.patientPrimary} style={{ marginTop: 20 }} />
       ) : (
@@ -199,7 +142,7 @@ export default function ActivityScreen() {
               <Text style={patientStyles.emptyListText}>
                 No activity yet.
                 {"\n"}
-                Your adherence events will appear here.
+                Notifications triggered by the system will appear here.
               </Text>
             </View>
           }

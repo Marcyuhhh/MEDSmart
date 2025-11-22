@@ -8,27 +8,36 @@ import {
   ScrollView,
   Alert,
   RefreshControl,
-} from 'react-native';
+  ActivityIndicator
+} from 'react-native'; // Standard React Native imports
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { caregiverStyles } from '../../styles/caregiver.styles'; // Green Theme
+import DateTimePickerModal from 'react-native-modal-datetime-picker';
+
+// --- LOCAL IMPORTS ---
+import { caregiverStyles } from '../../styles/caregiver.styles'; 
 import { COLORS } from '../../styles/common.styles';
 import { useAuth } from '../_layout';
 import Input from '../../components/common/input';
 import Button from '../../components/common/button';
-import DateTimePickerModal from 'react-native-modal-datetime-picker';
+
+// --- FIREBASE / SERVICE IMPORTS ---
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../config/firebaseConfig';
+import { subscribeToMedbox, saveCompartment, deleteCompartment } from '../../services/medboxService';
 
 // --- Constants ---
 const DAYS_OF_WEEK = ['Su', 'M', 'Tu', 'W', 'Th', 'F', 'Sa'];
 
-// --- Medication Config Form (Green Version) ---
-const MedicationConfigForm = ({ compartment, onClose, onSave }) => {
+// --- Medication Config Form (Green Version - Full Control) ---
+const MedicationConfigForm = ({ compartment, onClose, onSave, onDelete }) => {
   const [medName, setMedName] = useState('');
   const [description, setDescription] = useState('');
   const [days, setDays] = useState([]);
   const [time, setTime] = useState(null);
   const [isTimePickerVisible, setTimePickerVisible] = useState(false);
+  const isEditing = compartment && compartment.medName;
 
   useEffect(() => {
     if (compartment && compartment.medName) {
@@ -37,25 +46,17 @@ const MedicationConfigForm = ({ compartment, onClose, onSave }) => {
       setDays(compartment.days || []);
       setTime(compartment.time || null);
     } else {
-      setMedName('');
-      setDescription('');
-      setDays([]);
-      setTime(null);
+      setMedName(''); setDescription(''); setDays([]); setTime(null);
     }
   }, [compartment]);
 
   const toggleDay = (day) => {
-    setDays((prevDays) =>
-      prevDays.includes(day) ? prevDays.filter((d) => d !== day) : [...prevDays, day]
-    );
+    setDays((prevDays) => prevDays.includes(day) ? prevDays.filter((d) => d !== day) : [...prevDays, day]);
   };
 
   const handleConfirmTime = (selectedTime) => {
-    const formattedTime = selectedTime.toLocaleTimeString([], {
-      hour: '2-digit', minute: '2-digit',
-    });
-    setTime(formattedTime);
-    setTimePickerVisible(false);
+    const formattedTime = selectedTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit'});
+    setTime(formattedTime); setTimePickerVisible(false);
   };
 
   const handleSave = () => {
@@ -65,6 +66,14 @@ const MedicationConfigForm = ({ compartment, onClose, onSave }) => {
     }
     onSave(compartment.id, { medName, description, days, time, isEmpty: false });
   };
+
+  const handleDeletePress = () => {
+    Alert.alert("Delete Medication", `Are you sure you want to remove ${medName}?`, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => onDelete(compartment.id) }
+    ]);
+  };
+
 
   return (
     <ScrollView>
@@ -92,33 +101,25 @@ const MedicationConfigForm = ({ compartment, onClose, onSave }) => {
         })}
       </View>
 
-      <Button
-        title={time ? `Time: ${time}` : 'Set Time'}
-        onPress={() => setTimePickerVisible(true)}
-        color={COLORS.lightGray}
-        textColor={COLORS.black}
-      />
+      <Button title={time ? `Time: ${time}` : 'Set Time'} onPress={() => setTimePickerVisible(true)} color={COLORS.lightGray} textColor={COLORS.black} />
 
       <View style={{flexDirection: 'row', justifyContent: 'space-between', marginTop: 20}}>
-        <View style={{flex: 1, marginRight: 5}}>
-            <Button title="Cancel" onPress={onClose} color={COLORS.gray} />
-        </View>
-        <View style={{flex: 1, marginLeft: 5}}>
-            <Button title="Save" onPress={handleSave} color={COLORS.caregiverPrimary} />
-        </View>
+        <View style={{flex: 1, marginRight: 5}}><Button title="Cancel" onPress={onClose} color={COLORS.gray} /></View>
+        <View style={{flex: 1, marginLeft: 5}}><Button title="Save" onPress={handleSave} color={COLORS.caregiverPrimary} /></View>
       </View>
+      
+      {isEditing && (
+        <TouchableOpacity style={{ marginTop: 15, padding: 10, alignItems: 'center' }} onPress={handleDeletePress}>
+          <Text style={{ color: COLORS.danger, fontWeight: 'bold', fontSize: 16 }}>Remove Medication</Text>
+        </TouchableOpacity>
+      )}
 
-      <DateTimePickerModal
-        isVisible={isTimePickerVisible}
-        mode="time"
-        onConfirm={handleConfirmTime}
-        onCancel={() => setTimePickerVisible(false)}
-      />
+      <DateTimePickerModal isVisible={isTimePickerVisible} mode="time" onConfirm={handleConfirmTime} onCancel={() => setTimePickerVisible(false)} />
     </ScrollView>
   );
 };
 
-// --- Legend Component (Green Version) ---
+// --- Legend Component (Unchanged) ---
 const GridLegend = () => (
   <View style={{
     flexDirection: 'row', justifyContent: 'space-around', padding: 10,
@@ -139,37 +140,65 @@ const GridLegend = () => (
   </View>
 );
 
-// --- Main Caregiver MedBox Screen ---
+// --- MAIN COMPONENT ---
 export default function CaregiverMedBoxScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const isPatientConnected = user?.linkedPatientId ? true : false;
 
-  const [compartments, setCompartments] = useState([
-    { id: 'A1', medName: null, isEmpty: false }, { id: 'A2', medName: null, isEmpty: false }, { id: 'A3', medName: null, isEmpty: false },
-    { id: 'B1', medName: null, isEmpty: false }, { id: 'B2', medName: null, isEmpty: false }, { id: 'B3', medName: null, isEmpty: false },
-    { id: 'C1', medName: null, isEmpty: false }, { id: 'C2', medName: null, isEmpty: false }, { id: 'C3', medName: null, isEmpty: false },
-  ]);
-  
+  const [compartments, setCompartments] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [isModalVisible, setIsModalVisible] = useState(false);
   const [selectedCompartment, setSelectedCompartment] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [linkedDeviceId, setLinkedDeviceId] = useState(null);
+  const [patientName, setPatientName] = useState(user?.linkedPatientName || 'Patient');
 
-  // --- DATA FETCHING ---
-  const fetchData = () => {
+  // --- FETCH PATIENT DEVICE ID AND NAME (once) ---
+  const fetchPatientInfo = async () => {
     if (!isPatientConnected) return;
-    console.log(`Fetching MedBox for patient: ${user.linkedPatientId}`);
-    // TODO: Connect to Firebase `medboxes/{user.linkedPatientId}`
+
+    const patientDoc = await getDoc(doc(db, 'users', user.linkedPatientId));
+    if (patientDoc.exists()) {
+        const pData = patientDoc.data();
+        setLinkedDeviceId(pData.deviceId);
+        setPatientName(pData.name);
+    }
   };
 
+
+  // --- REAL-TIME DATA LISTENER (Patient's MedBox) ---
   useEffect(() => {
-    fetchData();
+    if (!isPatientConnected) {
+        setIsLoading(false);
+        setCompartments([]);
+        return;
+    }
+    
+    // Fetch info once to get the Device ID
+    fetchPatientInfo();
+
+    // Subscribe to patient's medbox data using their UID
+    const unsubscribe = subscribeToMedbox(
+        user.linkedPatientId, 
+        (data) => {
+            setCompartments(data);
+            setIsLoading(false);
+        },
+        (error) => {
+            console.error("Caregiver MedBox Listener Error:", error);
+            setIsLoading(false);
+        }
+    );
+
+    return () => unsubscribe();
   }, [isPatientConnected]);
 
   const onRefresh = useCallback(() => {
     setIsRefreshing(true);
-    fetchData();
-    setTimeout(() => setIsRefreshing(false), 1000);
+    fetchPatientInfo(); // Refresh patient name/device info
+    // The main data updates via the live listener
+    setTimeout(() => setIsRefreshing(false), 1000); 
   }, [isPatientConnected]);
 
   // --- HANDLERS ---
@@ -183,13 +212,34 @@ export default function CaregiverMedBoxScreen() {
     setSelectedCompartment(null);
   };
 
-  const handleSaveSchedule = (compartmentId, scheduleData) => {
-    // TODO: Save to Firebase `medboxes/{user.linkedPatientId}/{compartmentId}`
-    setCompartments(prev =>
-      prev.map(c => c.id === compartmentId ? { ...c, ...scheduleData } : c)
-    );
-    handleCloseModal();
+  // Saves changes to the patient's medbox
+  const handleSaveSchedule = async (compartmentId, scheduleData) => {
+    if (!linkedDeviceId || linkedDeviceId === 'Not Connected' || !isPatientConnected) {
+        Alert.alert("Error", "Cannot save: Device ID is unknown or patient is unlinked.");
+        return;
+    }
+    try {
+        // Use patient's UID and Device ID
+        await saveCompartment(user.linkedPatientId, linkedDeviceId, compartmentId, scheduleData);
+        handleCloseModal();
+        Alert.alert("Success", "Schedule updated for the patient.");
+    } catch (e) {
+        Alert.alert("Error", "Failed to save schedule.");
+    }
   };
+
+  // Deletes medication from the patient's medbox
+  const handleDeleteSchedule = async (compartmentId) => {
+    if (!linkedDeviceId || linkedDeviceId === 'Not Connected' || !isPatientConnected) return;
+    try {
+        await deleteCompartment(user.linkedPatientId, linkedDeviceId, compartmentId);
+        handleCloseModal();
+        Alert.alert("Success", "Medication deleted.");
+    } catch (e) {
+        Alert.alert("Error", "Failed to delete medication.");
+    }
+  };
+
 
   const renderCompartment = ({ item }) => {
     let style, textStyle, cellContent;
@@ -227,7 +277,7 @@ export default function CaregiverMedBoxScreen() {
           </Text>
           <Button 
             title="Go to Profile to Pair" 
-            onPress={() => router.push('/(caregiver)/profile')}
+            onPress={() => router.push('/caregiver/profile')}
             color={COLORS.caregiverPrimary}
           />
         </View>
@@ -239,23 +289,24 @@ export default function CaregiverMedBoxScreen() {
   return (
     <SafeAreaView style={caregiverStyles.gridContainer}>
       <View style={caregiverStyles.header}>
-        <Text style={caregiverStyles.headerTitle}>{user?.linkedPatientName || 'Patient'}'s MedBox</Text>
+        <Text style={caregiverStyles.headerTitle}>{patientName}'s MedBox</Text>
+        {linkedDeviceId && linkedDeviceId !== 'Not Connected' && (
+            <Text style={caregiverStyles.headerSubtitle}>Device ID: {linkedDeviceId}</Text>
+        )}
       </View>
-
-      <FlatList
-        data={compartments}
-        renderItem={renderCompartment}
-        keyExtractor={(item) => item.id}
-        numColumns={3}
-        ListHeaderComponent={<GridLegend />}
-        refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={onRefresh}
-            colors={[COLORS.caregiverPrimary]}
-          />
-        }
-      />
+      
+      {isLoading ? (
+        <ActivityIndicator size="large" color={COLORS.caregiverPrimary} style={{marginTop: 50}} />
+      ) : (
+        <FlatList
+          data={compartments}
+          renderItem={renderCompartment}
+          keyExtractor={(item) => item.id}
+          numColumns={3}
+          ListHeaderComponent={<GridLegend />}
+          refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={[COLORS.caregiverPrimary]} />}
+        />
+      )}
 
       <Modal
         visible={isModalVisible}
@@ -263,16 +314,13 @@ export default function CaregiverMedBoxScreen() {
         transparent={true}
         onRequestClose={handleCloseModal}
       >
-        <TouchableOpacity 
-          style={caregiverStyles.modalBackdrop} 
-          activeOpacity={1} 
-          onPressOut={handleCloseModal}
-        >
+        <TouchableOpacity style={caregiverStyles.modalBackdrop} activeOpacity={1} onPressOut={handleCloseModal}>
           <View style={caregiverStyles.modalContent} onStartShouldSetResponder={() => true}>
             <MedicationConfigForm
               compartment={selectedCompartment}
               onClose={handleCloseModal}
               onSave={handleSaveSchedule}
+              onDelete={handleDeleteSchedule}
             />
           </View>
         </TouchableOpacity>

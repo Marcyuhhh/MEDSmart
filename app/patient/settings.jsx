@@ -7,13 +7,20 @@ import {
   TouchableOpacity,
   Alert,
   RefreshControl,
+  ActivityIndicator
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router'; 
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { patientStyles } from '../../styles/patient.styles';
 import { COLORS, SIZES } from '../../styles/common.styles';
 import { useAuth } from '../_layout';
+
+// --- IMPORT SERVICE ---
+// We import the new function here
+import { clearActivityHistory } from '../../services/activityService';
+import { deleteDoc, doc } from 'firebase/firestore';
+import { db } from '../../config/firebaseConfig';
 
 const ToggleRow = ({ label, onValueChange, isEnabled }) => (
   <View style={patientStyles.settingsRow}>
@@ -41,16 +48,15 @@ export default function SettingsScreen() {
   const { setAuth, user } = useAuth();
 
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
   const onRefresh = useCallback(() => {
-    console.log("Refreshing settings...");
     setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
-    }, 1000);
+    setTimeout(() => setIsRefreshing(false), 1000);
   }, []);
 
+  // --- UPDATED HANDLER ---
   const onClearActivity = () => {
     Alert.alert(
       "Clear Activity",
@@ -60,9 +66,23 @@ export default function SettingsScreen() {
         {
           text: 'Clear All',
           style: 'destructive',
-          onPress: () => {
-            console.log("--- Deleting Activity Log ---");
-            Alert.alert("Activity Cleared", "Your activity history has been deleted.");
+          onPress: async () => {
+            if (!user) return;
+            setIsLoading(true);
+            
+            try {
+              console.log("Deleting activity logs via Service...");
+              
+              // Call the service function
+              await clearActivityHistory(user.uid);
+              
+              Alert.alert("Success", "Your activity history has been cleared.");
+            } catch (error) {
+              console.error("Clear history error:", error);
+              Alert.alert("Error", "Failed to clear history. Please try again.");
+            } finally {
+              setIsLoading(false);
+            }
           }
         }
       ]
@@ -81,15 +101,35 @@ export default function SettingsScreen() {
           onPress: () => {
             Alert.alert(
               "Final Confirmation",
-              "Please type 'DELETE' to confirm.",
+              "Please confirm you want to delete your account.",
               [
                 { text: "Cancel" },
                 {
                   text: "Delete",
                   style: 'destructive',
-                  onPress: () => {
-                    console.log("--- PERMANENTLY DELETING ACCOUNT ---");
-                    setAuth(null);
+                  onPress: async () => {
+                    if (!user) return;
+                    setIsLoading(true);
+                    try {
+                      console.log("--- PERMANENTLY DELETING ACCOUNT ---");
+                      
+                      // 1. Clear History first using our service
+                      await clearActivityHistory(user.uid);
+
+                      // 2. Delete MedBox
+                      await deleteDoc(doc(db, 'medboxes', user.uid));
+                      
+                      // 3. Delete User Profile
+                      await deleteDoc(doc(db, 'users', user.uid));
+                      
+                      // 4. Log Out
+                      setAuth(null);
+                      
+                    } catch (error) {
+                      console.error(error);
+                      Alert.alert("Error", "Failed to delete account data.");
+                      setIsLoading(false);
+                    }
                   }
                 }
               ]
@@ -104,13 +144,16 @@ export default function SettingsScreen() {
     <SafeAreaView style={patientStyles.settingsContainer} edges={['bottom']}>
       <ScrollView
         refreshControl={
-          <RefreshControl
-            refreshing={isRefreshing}
-            onRefresh={onRefresh}
-            colors={[COLORS.patientPrimary]}
-          />
+          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={[COLORS.patientPrimary]} />
         }
       >
+        {isLoading && (
+          <View style={{ padding: 20 }}>
+            <ActivityIndicator size="large" color={COLORS.patientPrimary} />
+            <Text style={{ textAlign: 'center', color: COLORS.gray, marginTop: 10 }}>Processing...</Text>
+          </View>
+        )}
+
         <View style={patientStyles.profileSection}>
           <Text style={patientStyles.profileSectionTitle}>NOTIFICATIONS</Text>
           <ToggleRow
@@ -131,21 +174,12 @@ export default function SettingsScreen() {
 
         <View style={patientStyles.profileSection}>
           <Text style={patientStyles.profileSectionTitle}>LEGAL</Text>
-          <ClickableRow
-            label="Privacy Policy"
-            onPress={() => Alert.alert("Privacy Policy", "Coming soon.")}
-          />
-          <ClickableRow
-            label="Terms of Service"
-            onPress={() => Alert.alert("Terms of Service", "Coming soon.")}
-          />
+          <ClickableRow label="Privacy Policy" onPress={() => Alert.alert("Privacy Policy", "Coming soon.")} />
+          <ClickableRow label="Terms of Service" onPress={() => Alert.alert("Terms of Service", "Coming soon.")} />
         </View>
 
         <View style={patientStyles.dangerSection}>
-          <TouchableOpacity
-            style={patientStyles.dangerButton}
-            onPress={onDeleteAccount}
-          >
+          <TouchableOpacity style={patientStyles.dangerButton} onPress={onDeleteAccount}>
             <Text style={patientStyles.dangerButtonText}>Delete Account</Text>
           </TouchableOpacity>
         </View>

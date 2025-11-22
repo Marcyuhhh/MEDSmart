@@ -2,6 +2,7 @@
 import { initializeApp } from "firebase/app";
 import { initializeAuth, getReactNativePersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
+import { getDatabase } from 'firebase/database';
 import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
@@ -11,7 +12,8 @@ const firebaseConfig = {
   storageBucket: "medsmart-d8446.firebasestorage.app",
   messagingSenderId: "485408700352",
   appId: "1:485408700352:web:f19c5b632bb868ce4fba25",
-  measurementId: "G-JDZX142Z2H"
+  measurementId: "G-JDZX142Z2H",
+  databaseURL: "https://medsmart-d8446-default-rtdb.asia-southeast1.firebasedatabase.app"
 };
 
 // Initialize Firebase
@@ -23,3 +25,4 @@ export const auth = initializeAuth(app, {
 });
 
 export const db = getFirestore(app);
+export const rtdb = getDatabase(app);
