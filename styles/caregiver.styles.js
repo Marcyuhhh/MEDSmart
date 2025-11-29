@@ -14,8 +14,6 @@ export const caregiverStyles = StyleSheet.create({
   
   // --- Dashboard Header ---
   header: {
-    padding: SIZES.large,
-    paddingTop: SIZES.xlarge,
     backgroundColor: COLORS.caregiverBackground,
   },
   headerTitle: {
