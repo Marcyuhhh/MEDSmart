@@ -1,0 +1,22 @@
+name: auto-commit
+on:
+  schedule:
+    - cron: "0 */3 * * *"   # every 3 hours (00:00, 03:00, 06:00 ... UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Update log
+        run: |
+          date -u > last-run.txt
+          git config user.name "marcoyahhh"
+          git config user.email "eurese.marc.ariel@gmail.com"
+          git add last-run.txt
+          git commit -m "chore: update $(date -u +%F-%H%M)"
+          git push
