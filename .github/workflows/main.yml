@@ -1,7 +1,7 @@
-name: auto-commit
+name: every3hrs-commit
 on:
   schedule:
-    - cron: "0 */3 * * *"   # every 3 hours (00:00, 03:00, 06:00 ... UTC)
+    - cron: "17 */3 * * *"   # every 3 hours at minute 17 UTC
   workflow_dispatch:
 
 permissions:
@@ -15,8 +15,8 @@ jobs:
       - name: Update log
         run: |
           date -u > last-run.txt
-          git config user.name "marcoyahhh"
-          git config user.email "eurese.marc.ariel@gmail.com"
+          git config user.name "Marcyuhhh"
+          git config user.email "eurese.mar.ariel@gmail.com"
           git add last-run.txt
           git commit -m "chore: update $(date -u +%F-%H%M)"
           git push
